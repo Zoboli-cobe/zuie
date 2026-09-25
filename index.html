@@ -79,6 +79,7 @@ body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-ser
 .markbar button{flex:1;padding:9px;border-radius:10px;border:1px solid var(--line);background:#fff;font-size:13px;font-weight:600;cursor:pointer;}
 .markbar button.got{color:var(--ok);border-color:var(--ok);background:var(--okbg);}
 .markbar button.notgot{color:var(--bad);border-color:var(--bad);background:var(--badbg);}
+.markbar button.star-on{color:#d97706;border-color:#f59e0b;background:#fffbeb;}
 .markbar button:active{transform:scale(.97);}
 .hint{color:var(--muted);font-size:13px;margin-bottom:10px;}
 .primary-btn{width:100%;padding:12px;border-radius:11px;border:none;background:var(--pri);color:#fff;font-size:15px;font-weight:600;cursor:pointer;}
@@ -164,6 +165,19 @@ function qkey(q){ return qStateKey(q); }
 function isMarked(q){ return !!marks[qkey(q)]; }
 function toggleMark(q){ const k=qkey(q); if(marks[k]) delete marks[k]; else marks[k]=1; saveMarks(); }
 
+// 打星收藏（重要知识点）
+const STAR_KEY='quiz_stars_v1'; // {qKey: {text,chNum,type,answer,explain,ts}}
+let stars={};
+try{ stars=JSON.parse(localStorage.getItem(STAR_KEY)||'{}'); }catch(e){ stars={}; }
+function saveStars(){ try{ localStorage.setItem(STAR_KEY, JSON.stringify(stars)); }catch(e){} }
+function isStarred(q){ return !!stars[qStateKey(q)]; }
+function toggleStar(q){
+  const k=qStateKey(q);
+  if(stars[k]) delete stars[k];
+  else stars[k]={text:q.text, chNum:q.ch.num, type:q.type, answer:q.answer, explain:q.explanation, ts:Date.now()};
+  saveStars();
+}
+
 // --- 进度记忆 ---
 const PROGKEY='quiz_progress_v1'; // {sessionId: {idx, total, ts, label}}
 let progress={};
@@ -204,7 +218,10 @@ function showHome(){
           <div class="ico">🎲</div><div><div class="ttl">随机模式</div><div class="sub">所有章节题型随机抽 1000 题${progLabel('practice:random',1000)?' · '+progLabel('practice:random',1000):''}</div></div><div class="arrow">›</div>
         </div>
         <div class="menucard" onclick="showMistakes()">
-          <div class="ico">📝</div><div><div class="ttl">错题本</div><div class="sub">${Object.keys(mistakes).length} 道错题</div></div><div class="arrow">›</div>
+          <div class="ico">📝</div><div><div class="ttl">错题本</div><div class="sub">${Object.keys(mistakes).length} 道错题 · 按章节分类</div></div><div class="arrow">›</div>
+        </div>
+        <div class="menucard" onclick="showStars()">
+          <div class="ico">⭐</div><div><div class="ttl">重要知识点</div><div class="sub">${Object.keys(stars).length} 个已收藏</div></div><div class="arrow">›</div>
         </div>
         <div class="menucard" onclick="showExamStart()">
           <div class="ico">🏆</div><div><div class="ttl">模拟考试</div><div class="sub">32 题 · 满分 108 分</div></div><div class="arrow">›</div>
@@ -215,6 +232,9 @@ function showHome(){
         </div>
         <div class="menucard" onclick="showTypes()">
           <div class="ico">🔤</div><div><div class="ttl">题型分类</div><div class="sub">单选 / 多选 / 简答</div></div><div class="arrow">›</div>
+        </div>
+        <div class="menucard" onclick="showStars()">
+          <div class="ico">⭐</div><div><div class="ttl">重要知识点</div><div class="sub">${Object.keys(stars).length} 个已收藏</div></div><div class="arrow">›</div>
         </div>`
       }
     </div>`;
@@ -262,12 +282,19 @@ function showMistakes(){
     html+='<div class="empty">暂无错题，答题时答错的题会自动收录到这里 ✨</div>';
     c.innerHTML=html; return;
   }
-  html+=`<div style="margin-bottom:10px;font-size:13px;color:var(--muted);">共 ${keys.length} 道错题</div><div class="menu">`;
-  keys.forEach(k=>{
-    const m=mistakes[k];
-    html+=`<div class="menucard" onclick="viewMistake('${k}')"><div class="ico">✗</div><div><div class="ttl" style="font-size:14px;">${esc(m.text.slice(0,50))}${m.text.length>50?'…':''}</div><div class="sub">${m.chNum}讲 · ${typeName(m.type)}</div></div><div class="arrow">›</div></div>`;
+  // 按章节分组
+  const groups={};
+  keys.forEach(k=>{ const m=mistakes[k]; const g=m.chNum||'其他'; if(!groups[g]) groups[g]=[]; groups[g].push({k,m}); });
+  const sortedCh=Object.keys(groups).sort((a,b)=>(parseInt(a)||0)-(parseInt(b)||0));
+  html+=`<div style="margin-bottom:10px;font-size:13px;color:var(--muted);">共 ${keys.length} 道错题 · 按章节分类</div>`;
+  sortedCh.forEach(ch=>{
+    const items=groups[ch];
+    html+=`<div style="margin:12px 0 6px;font-size:14px;font-weight:700;color:var(--pri);">第 ${ch} 讲（${items.length} 题）</div><div class="menu">`;
+    items.forEach(({k,m})=>{
+      html+=`<div class="menucard" onclick="viewMistake('${k}')"><div class="ico">✗</div><div><div class="ttl" style="font-size:14px;">${esc(m.text.slice(0,50))}${m.text.length>50?'…':''}</div><div class="sub">${typeName(m.type)}</div></div><div class="arrow">›</div></div>`;
+    });
+    html+='</div>';
   });
-  html+='</div>';
   html+=`<button class="primary-btn mt" onclick="clearMistakes()">清空错题本</button>`;
   c.innerHTML=html;
 }
@@ -292,11 +319,69 @@ function viewMistake(k){
   }
   html+=`<div class="study-answerbox"><span class="lbl">答案：<b>${esc(m.answer)}</b></span>`;
   if(m.explain){ html+=`<div class="expl"><b>解析：</b>${esc(m.explain)}</div>`; }
-  html+=`</div><div class="markbar"><button class="markbar-btn notgot" onclick="removeMistake('${k}');showMistakes();">移出错题本</button></div></div>`;
+  html+=`</div><div class="markbar"><button class="markbar-btn notgot" onclick="removeMistake('${k}');showMistakes();">移出错题本</button><button class="markbar-btn${isStarred(q)?' notgot':''}" onclick="toggleStarFromMistake('${k}');showMistakes();">${isStarred(q)?'★ 已收藏':'☆ 加入重要知识点'}</button></div></div>`;
   c.innerHTML=html;
+}
+function toggleStarFromMistake(k){
+  const m=mistakes[k];
+  const q={text:m.text, ch:{num:m.chNum}, type:m.type, answer:m.answer, explanation:m.explain};
+  const key=qStateKey(q);
+  toggleStar(q);
 }
 function clearMistakes(){
   if(confirm('确定清空全部错题？')){ mistakes={}; saveMistakes(); showMistakes(); }
+}
+function showStars(){
+  const c=document.getElementById('content');
+  document.getElementById('pager').style.display='none';
+  const keys=Object.keys(stars);
+  let html=`<div class="backbar" onclick="showHome()"><span class="bk">‹</span>返回</div>`;
+  if(!keys.length){
+    html+='<div class="empty">暂无重要知识点收藏。在答题/背题时点 ⭐ 即可收藏必须掌握的知识点 ✨</div>';
+    c.innerHTML=html; return;
+  }
+  const groups={};
+  keys.forEach(k=>{ const s=stars[k]; const g=s.chNum||'其他'; if(!groups[g]) groups[g]=[]; groups[g].push({k,s}); });
+  const sortedCh=Object.keys(groups).sort((a,b)=>(parseInt(a)||0)-(parseInt(b)||0));
+  html+=`<div style="margin-bottom:10px;font-size:13px;color:var(--muted);">共 ${keys.length} 个重要知识点 · 按章节分类</div>`;
+  sortedCh.forEach(ch=>{
+    const items=groups[ch];
+    html+=`<div style="margin:12px 0 6px;font-size:14px;font-weight:700;color:var(--pri);">第 ${ch} 讲（${items.length} 个）</div><div class="menu">`;
+    items.forEach(({k,s})=>{
+      html+=`<div class="menucard" onclick="viewStar('${k}')"><div class="ico">⭐</div><div><div class="ttl" style="font-size:14px;">${esc(s.text.slice(0,50))}${s.text.length>50?'…':''}</div><div class="sub">${typeName(s.type)}</div></div><div class="arrow">›</div></div>`;
+    });
+    html+='</div>';
+  });
+  html+=`<button class="primary-btn mt" onclick="clearStars()">清空收藏</button>`;
+  c.innerHTML=html;
+}
+function viewStar(k){
+  const s=stars[k];
+  const c=document.getElementById('content');
+  document.getElementById('pager').style.display='none';
+  const q=allQuestions().find(qq=>qStateKey(qq)===k);
+  let html=`<div class="backbar" onclick="showStars()"><span class="bk">‹</span>返回重要知识点</div><div class="qcard">`;
+  html+=`<div class="qmeta"><span>${s.chNum}讲</span><span class="badge${typeBadge(s.type)}">${typeName(s.type)}</span><span style="margin-left:auto;color:#f59e0b;">⭐ 已收藏</span></div>`;
+  html+=`<div class="qtext">${esc(s.text)}</div>`;
+  if(q && q.options && q.options.length){
+    const opts=q.options.map(o=>{ const mm=o.match(/^([Ａ-ＺA-Z])[.．]?(.*)$/); if(mm){const l=mm[1].replace(/[Ａ-Ｚ]/g,cc=>String.fromCharCode(cc.charCodeAt(0)-0xFEE0)); return {label:l.toUpperCase(),text:mm[2].trim()};} return {label:'',text:o}; });
+    const ansSet=new Set((s.answer||'').replace(/[^A-Z]/g,'').split(''));
+    let ob='<div class="opts">';
+    opts.forEach(o=>{
+      const lbl=o.label;
+      ob+=`<div class="opt${ansSet.has(lbl)?' correct':''}"><span class="key">${esc(lbl)}</span><span>${esc(o.text)}</span>${ansSet.has(lbl)?'<span class="mark ok">✔</span>':''}</div>`;
+    });
+    ob+='</div>';
+    html+=ob;
+  }
+  html+=`<div class="study-answerbox"><span class="lbl">答案：<b>${esc(s.answer)}</b></span>`;
+  if(s.explain){ html+=`<div class="expl"><b>解析：</b>${esc(s.explain)}</div>`; }
+  html+=`</div><div class="markbar"><button class="markbar-btn notgot" onclick="toggleStarFromList('${k}');showStars();">取消收藏</button></div></div>`;
+  c.innerHTML=html;
+}
+function toggleStarFromList(k){ if(stars[k]) delete stars[k]; saveStars(); }
+function clearStars(){
+  if(confirm('确定清空全部收藏？')){ stars={}; saveStars(); showStars(); }
 }
 
 function enterSession(sid, qs, label){
@@ -435,7 +520,7 @@ function startExam(){
     else if(cfg.type==='multiple') src=all.filter(q=>q.type==='multiple');
     else if(cfg.type==='short') src=all.filter(q=>q.type==='short');
     else if(cfg.type==='judge') src=all.filter(q=>q.type==='single' && /[（(]\s*[）)]/.test(q.text));
-    else if(cfg.type==='fill') src=all.filter(q=>q.type==='single' && /[（(]\s*[）)]/.test(q.text));
+    else if(cfg.type==='fill') src=all.filter(q=>(q.type==='single'||q.type==='multiple') && /[（(]\s*[）)]/.test(q.text));
     const picked=shuffle(src).slice(0,cfg.count);
     picked.forEach(srcQ=>{
       papers.push(makePaper(cfg.type, srcQ, qid++, cfg.score));
@@ -454,7 +539,15 @@ function makePaper(etype, srcQ, qid, score){
     const perm=shuffle(opts.map((_,i)=>i));
     base.opts=perm.map((oldIdx,newPos)=>({label:String.fromCharCode(65+newPos),text:opts[oldIdx].text, isAns:ansSet.has(opts[oldIdx].label)}));
   } else if(etype==='fill'){
-    base.stdAns=(correctOpts[0]||srcQ.answer).trim();
+    if(srcQ.type==='multiple'){
+      base.isMulti=true;
+      base.stdAns=correctOpts.join('、');
+      base.text=srcQ.text.replace(/[（(]\s*[）)]/,'都有哪些？');
+      base.stdAnswers=correctOpts;
+    } else {
+      base.isMulti=false;
+      base.stdAns=(correctOpts[0]||srcQ.answer).trim();
+    }
   } else if(etype==='judge'){
     const isTrue=Math.random()<0.5;
     const fillText = isTrue ? (correctOpts[0]||'') : pickWrongOption(opts, ansSet);
@@ -524,6 +617,18 @@ function checkFillEqual(user, std){
   if(u===s) return true;
   const strip=t=>t.replace(/万人|万|人次|家|人|%|ml|min|L|h|mmHg|次|天|周|月|年|g|mg|mmol|'/g,'');
   return strip(u)===strip(s) && strip(u).length>0;
+}
+// 多选填空题判分：标准答案的每个正确选项文字都要被用户命中
+function checkFillMulti(user, stdAnswers){
+  const u=normalizeAns(user);
+  if(!u || !stdAnswers || !stdAnswers.length) return false;
+  if(u===normalizeAns(stdAnswers.join('、'))) return true;
+  let hit=0;
+  stdAnswers.forEach(a=>{
+    const core=normalizeAns(a).replace(/^[（(]|[）)]$/g,'');
+    if(core && u.includes(core.slice(0, Math.min(core.length, 8)))) hit++;
+  });
+  return (hit/stdAnswers.length)>=1;
 }
 function renderExamPaper(){
   const p=exam.papers[exam.idx];
@@ -628,7 +733,7 @@ function bindExamInteract(p){
     const inp=document.getElementById('examFill');
     const sub=document.getElementById('examFillSubmit');
     if(inp) inp.oninput=()=>{ exam.answers[p.id]=inp.value; };
-    if(sub) sub.onclick=()=>{ const v=(document.getElementById('examFill').value||'').trim(); exam.answers[p.id]=v; if(!v){alert('请先输入答案');return;} judgeAndProceed(checkFillEqual(v, p.stdAns)); };
+    if(sub) sub.onclick=()=>{ const v=(document.getElementById('examFill').value||'').trim(); exam.answers[p.id]=v; if(!v){alert('请先输入答案');return;} const ok=p.isMulti?checkFillMulti(v, p.stdAnswers):checkFillEqual(v, p.stdAns); judgeAndProceed(ok); };
   } else if(p.etype==='judge'){
     const bt=document.getElementById('ejTrue'), bf=document.getElementById('ejFalse');
     if(bt) bt.onclick=()=>{ exam.answers[p.id]=true; judgeAndProceed(p.isTrue===true); };
@@ -655,7 +760,7 @@ function examSubmit(){
     } else if(p.etype==='multiple'){
       if(ans && ans.length){ const chosen=new Set(ans.map(i=>p.opts[i].label)); const correct=new Set(p.opts.filter(o=>o.isAns).map(o=>o.label)); ok=chosen.size===correct.size && [...correct].every(x=>chosen.has(x)); userText=ans.map(i=>p.opts[i].text).join('、'); }
     } else if(p.etype==='fill'){
-      userText=ans||''; ok=checkFillEqual(userText, p.stdAns);
+      userText=ans||''; ok = p.isMulti ? checkFillMulti(userText, p.stdAnswers) : checkFillEqual(userText, p.stdAns);
     } else if(p.etype==='judge'){
       if(ans!==undefined){ ok=(ans===p.isTrue); userText=ans?'对':'错'; }
     } else if(p.etype==='short'){
@@ -776,6 +881,13 @@ class QuestionWidget{
     box2.innerHTML=`<span class="lbl">${ok?'✓ 回答正确':'✗ 回答错误'} · 正确答案：<b style="color:var(--ok)">${esc(ansDisplay)}</b></span>`;
     const expText=this.explainDisplay||this.q.explanation;
     if(expText){ const e=document.createElement('div'); e.className='expl'; e.innerHTML='<b>解析：</b>'+esc(expText); box2.appendChild(e); }
+    const sb=document.createElement('button');
+    const starred=isStarred(this.q);
+    sb.className='markbar-btn mt'+(starred?' star-on':'');
+    sb.textContent=starred?'★ 已收藏':'☆ 设为重要知识点';
+    sb.style.cssText='padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:13px;cursor:pointer;';
+    sb.onclick=()=>{ toggleStar(this.q); const s2=isStarred(this.q); sb.className='markbar-btn mt'+(s2?' star-on':''); sb.textContent=s2?'★ 已收藏':'☆ 设为重要知识点'; };
+    box2.appendChild(sb);
     body.appendChild(box2);
   }
   showShortAns(container, st, showUser, ok){
@@ -900,6 +1012,13 @@ class QuestionWidget{
     got.onclick=()=>this.setMark(false,got,ngot);
     ngot.onclick=()=>this.setMark(true,got,ngot);
     bar.appendChild(got); bar.appendChild(ngot);
+    // 打星按钮
+    const star=document.createElement('button');
+    const starred=isStarred(this.q);
+    star.className='markbar-btn'+(starred?' star-on':'');
+    star.textContent=starred?'★ 已收藏':'☆ 重要知识点';
+    star.onclick=()=>{ toggleStar(this.q); const s=isStarred(this.q); star.className='markbar-btn'+(s?' star-on':''); star.textContent=s?'★ 已收藏':'☆ 重要知识点'; };
+    bar.appendChild(star);
     return bar;
   }
   refreshMarkBtns(marked,got,ngot){
