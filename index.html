@@ -113,6 +113,13 @@ function qkey(q){ return `${q.ch.num}:${q.type}:${q.text.slice(0,20)}`; }
 function isMarked(q){ return !!marks[qkey(q)]; }
 function toggleMark(q){ const k=qkey(q); if(marks[k]) delete marks[k]; else marks[k]=1; saveMarks(); }
 
+// --- 进度记忆 ---
+const PROGKEY='quiz_progress_v1'; // {sessionId: {idx, total, ts, label}}
+let progress={};
+try{ progress=JSON.parse(localStorage.getItem(PROGKEY)||'{}'); }catch(e){ progress={}; }
+function saveProgress(){ try{ localStorage.setItem(PROGKEY, JSON.stringify(progress)); }catch(e){} }
+let curSession=null; // 当前来源标识，如 'practice:chapter:3' / 'practice:random' / 'study:type:single'
+
 function typeName(t){ return {single:'单选题',multiple:'多选题',short:'简答题'}[t]||t; }
 function typeBadge(t){ return {single:'',multiple:' multi',short:' short'}[t]||''; }
 function esc(s){ return (s||'').replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
@@ -143,7 +150,7 @@ function showHome(){
           <div class="ico">🔤</div><div><div class="ttl">题型分类</div><div class="sub">单选 / 多选 / 简答</div></div><div class="arrow">›</div>
         </div>
         <div class="menucard" onclick="startRandom()">
-          <div class="ico">🎲</div><div><div class="ttl">随机模式</div><div class="sub">所有章节题型随机抽 1000 题</div></div><div class="arrow">›</div>
+          <div class="ico">🎲</div><div><div class="ttl">随机模式</div><div class="sub">所有章节题型随机抽 1000 题${progLabel('practice:random',1000)?' · '+progLabel('practice:random',1000):''}</div></div><div class="arrow">›</div>
         </div>`
         : `
         <div class="menucard" onclick="showChapters()">
@@ -156,13 +163,20 @@ function showHome(){
     </div>`;
 }
 
+function progLabel(sid, total){
+  const p=progress[sid];
+  if(p && p.idx>0 && p.total===total) return `上次到第 ${p.idx+1} 题`;
+  if(p && p.total===total && p.idx===0) return total+' 题';
+  return '';
+}
 function showChapters(){
   const c=document.getElementById('content');
   document.getElementById('pager').style.display='none';
   let grid='<div class="backbar" onclick="showHome()"><span class="bk">‹</span>返回</div><div class="grid">';
   DATA.forEach(ch=>{
     const total=ch.sections.reduce((a,s)=>a+s.questions.length,0);
-    grid+=`<button class="chipbtn" onclick="startChapter(${ch.num})"><span class="n">第${ch.num}讲 · ${total}题</span><br><span class="t">${esc(ch.title)}</span></button>`;
+    const pl=progLabel(`${MODE}:chapter:${ch.num}`, total);
+    grid+=`<button class="chipbtn" onclick="startChapter(${ch.num})"><span class="n">第${ch.num}讲 · ${total}题${pl?' · '+pl:''}</span><br><span class="t">${esc(ch.title)}</span></button>`;
   });
   grid+='</div>';
   c.innerHTML=grid;
@@ -175,31 +189,55 @@ function showTypes(){
   let html='<div class="backbar" onclick="showHome()"><span class="bk">‹</span>返回</div><div class="menu">';
   types.forEach(([k,name,ico])=>{
     const cnt=allQuestions().filter(q=>q.type===k).length;
-    html+=`<div class="menucard" onclick="startType('${k}')"><div class="ico">${ico}</div><div><div class="ttl">${name}</div><div class="sub">共 ${cnt} 题</div></div><div class="arrow">›</div></div>`;
+    const pl=progLabel(`${MODE}:type:${k}`, cnt);
+    html+=`<div class="menucard" onclick="startType('${k}')"><div class="ico">${ico}</div><div><div class="ttl">${name}</div><div class="sub">共 ${cnt} 题${pl?' · '+pl:''}</div></div><div class="arrow">›</div></div>`;
   });
   html+='</div>';
   c.innerHTML=html;
 }
 
+function enterSession(sid, qs, label){
+  curSession=sid;
+  pool=qs;
+  const saved=progress[sid];
+  if(saved && saved.total===qs.length && saved.idx>0 && saved.idx<qs.length){
+    poolIdx=saved.idx; // 自动续上
+  } else {
+    poolIdx=0;
+  }
+  saveSessionProg();
+  document.getElementById('pager').style.display='flex';
+  renderQuestion();
+  window.scrollTo(0,0);
+}
+function saveSessionProg(){
+  if(!curSession) return;
+  progress[curSession]={idx:poolIdx, total:pool.length, ts:Date.now()};
+  saveProgress();
+}
+function clearSessionProg(sid){ delete progress[sid]; saveProgress(); }
+
 function startChapter(num){
   const ch=DATA.find(x=>x.num===num);
   let qs=[];
   ch.sections.forEach(s=>{ s.questions.forEach(q=>qs.push({...q,type:s.type,ch:ch})); });
-  pool=qs; poolIdx=0;
-  document.getElementById('pager').style.display='flex';
-  renderQuestion();
-  window.scrollTo(0,0);
+  enterSession(`${MODE}:chapter:${num}`, qs, `${ch.title}`);
 }
 function startType(t){
   const qs=allQuestions().filter(q=>q.type===t);
-  pool=qs; poolIdx=0;
-  document.getElementById('pager').style.display='flex';
-  renderQuestion();
-  window.scrollTo(0,0);
+  enterSession(`${MODE}:type:${t}`, qs, typeName(t));
 }
 function startRandom(){
-  const qs=shuffle(allQuestions());
-  pool=qs.slice(0,1000); poolIdx=0;
+  const sid=`${MODE}:random`;
+  const saved=progress[sid];
+  let qs, startIdx=0;
+  if(saved && saved.pool && saved.pool.length===1000){
+    qs=saved.pool; startIdx=Math.min(saved.idx, qs.length-1);
+  } else {
+    qs=shuffle(allQuestions()).slice(0,1000);
+  }
+  curSession=sid; pool=qs; poolIdx=startIdx;
+  progress[sid]={idx:poolIdx,total:pool.length,pool:qs,ts:Date.now()}; saveProgress();
   document.getElementById('pager').style.display='flex';
   renderQuestion();
   window.scrollTo(0,0);
@@ -218,9 +256,27 @@ function renderQuestion(){
   c.appendChild(card);
   new QuestionWidget(card,q);
   pager.innerHTML=`<button onclick="step(-1)">‹ 上一题</button><span class="info">${poolIdx+1}/${pool.length}</span><button class="prim" onclick="step(1)">下一题 ›</button>`;
+  // 顶部增加「从头开始」小链接
+  const restart=document.createElement('div');
+  restart.style.cssText='text-align:center;padding:8px 0 0;';
+  restart.innerHTML=`<a href="javascript:void(0)" style="color:#8a8f9c;font-size:12px;text-decoration:none;" onclick="doRestart()">↺ 从第 1 题重新开始</a>`;
+  c.appendChild(restart);
+}
+function doRestart(){
+  if(!curSession) return;
+  poolIdx=0;
+  if(curSession.endsWith(':random')){
+    const qs=shuffle(allQuestions()).slice(0,1000);
+    pool=qs;
+    progress[curSession]={idx:0,total:pool.length,pool:qs,ts:Date.now()};
+  }
+  saveSessionProg();
+  renderQuestion();
+  window.scrollTo(0,0);
 }
 function step(d){
   poolIdx=(poolIdx+d+pool.length)%pool.length;
+  saveSessionProg();
   renderQuestion();
   window.scrollTo(0,0);
 }
@@ -292,6 +348,14 @@ class QuestionWidget{
     if(this.q.explanation){ const e=document.createElement('div'); e.className='expl'; e.innerHTML='<b>解析：</b>'+esc(this.q.explanation); box2.appendChild(e); }
     body.appendChild(box2);
     if(this.confirmBtn) this.confirmBtn.style.display='none';
+    this.autoAdvance();
+  }
+  autoAdvance(){
+    // 答题模式：作答后自动下一题（背题模式不自动跳）
+    if(MODE==='study') return;
+    if(poolIdx>=pool.length-1) return; // 最后一题不跳
+    if(this._timer) clearTimeout(this._timer);
+    this._timer=setTimeout(()=>step(1), 1400);
   }
   showShort(body){
     const d=document.createElement('div');
@@ -299,6 +363,7 @@ class QuestionWidget{
     d.innerHTML=`<span class="lbl">参考答案</span><div class="short-ans">${esc(this.q.answer)}</div>`;
     if(this.q.explanation){ const e=document.createElement('div'); e.className='expl'; e.innerHTML='<b>解析：</b>'+esc(this.q.explanation); d.appendChild(e); }
     body.appendChild(d);
+    this.autoAdvance();
   }
   buildStudy(body,opts,ansSet){
     const q=this.q;
