@@ -376,7 +376,7 @@ class QuestionWidget{
         this.showShortAns(d, st);
       } else {
         d.innerHTML=`<div class="hint">简答题 · 先在心里作答，再点下方查看参考答案</div><button class="primary-btn">显示参考答案</button>`;
-        d.querySelector('button').onclick=()=>{ this.showShortAns(d, st); this.autoAdvance(); };
+        d.querySelector('button').onclick=()=>{ this.showShortAns(d, st); this.autoAdvance(true); };
       }
       body.appendChild(d);
       return;
@@ -494,11 +494,12 @@ class QuestionWidget{
     });
     this.appendAnswerBox(body, this.state);
     if(this.confirmBtn) this.confirmBtn.style.display='none';
-    this.autoAdvance();
+    this.autoAdvance(this.state.ok);
   }
-  autoAdvance(){
-    // 答题模式：答完立即跳下一题（点击即跳）
+  autoAdvance(ok){
+    // 答题模式：答对立即跳下一题，答错停住（需手动点「下一题」）
     if(MODE==='study') return;
+    if(!ok) return; // 答错不自动跳，留在当前题查看解析
     if(poolIdx>=pool.length-1) return;
     step(1);
   }
