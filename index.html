@@ -625,14 +625,24 @@ class QuestionWidget{
     this.state=st;
     if(q.type==='short'){
       const d=document.createElement('div');
-      if(st.answered){
-        d.innerHTML=`<div class="hint">简答题 · 上次已查看</div>`;
-        this.showShortAns(d, st);
-      } else {
-        d.innerHTML=`<div class="hint">简答题 · 先在心里作答，再点下方查看参考答案</div><button class="primary-btn">显示参考答案</button>`;
-        d.querySelector('button').onclick=()=>{ this.showShortAns(d, st); this.autoAdvance(true); };
-      }
       body.appendChild(d);
+      if(st.answered){
+        d.innerHTML=`<div class="hint">简答题 · 你的作答已保存</div>`;
+        this.showShortAns(d, st, true);
+      } else {
+        d.innerHTML=`<div class="hint">简答题 · 请在下方输入你的答案</div>
+          <textarea class="exam-fillinput" id="shortAnswer" rows="5" placeholder="请输入答案…" style="resize:vertical;"></textarea>
+          <button class="primary-btn mt" id="shortSubmit">提交并查看参考答案</button>`;
+        const ta=d.querySelector('#shortAnswer');
+        const btn=d.querySelector('#shortSubmit');
+        btn.onclick=()=>{
+          const val=ta.value.trim();
+          if(!val){ alert('请先输入答案'); return; }
+          st.userAnswer=val; st.answered=true; st.ok=null;
+          sessionState[this.key]=st;
+          this.showShortAns(d, st, true);
+        };
+      }
       return;
     }
     const multi=q.type==='multiple';
@@ -674,13 +684,18 @@ class QuestionWidget{
     if(expText){ const e=document.createElement('div'); e.className='expl'; e.innerHTML='<b>解析：</b>'+esc(expText); box2.appendChild(e); }
     body.appendChild(box2);
   }
-  showShortAns(container, st){
+  showShortAns(container, st, showUser){
     const d=document.createElement('div');
     d.className='answer show correct';
-    d.innerHTML=`<span class="lbl">参考答案</span><div class="short-ans">${esc(this.q.answer)}</div>`;
-    if(this.q.explanation){ const e=document.createElement('div'); e.className='expl'; e.innerHTML='<b>解析：</b>'+esc(this.q.explanation); d.appendChild(e); }
+    let html='';
+    if(showUser && st.userAnswer){
+      html+=`<div style="font-size:13px;color:var(--muted);margin-bottom:8px;">你的答案：<div style="white-space:pre-wrap;color:var(--txt);">${esc(st.userAnswer)}</div></div>`;
+    }
+    html+=`<span class="lbl">参考答案</span><div class="short-ans">${esc(this.q.answer)}</div>`;
+    if(this.q.explanation){ html+=`<div class="expl"><b>解析：</b>${esc(this.q.explanation)}</div>`; }
+    d.innerHTML=html;
     container.appendChild(d);
-    st.answered=true; st.ok=true; sessionState[this.key]=st;
+    st.answered=true; sessionState[this.key]=st;
   }
   // 随机打乱选项，返回 {opts, ansSet, answer, explain}；answer 为打乱后的正确字母串
   shuffleOpts(opts, ansSet){
