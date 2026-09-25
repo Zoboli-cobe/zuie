@@ -45,8 +45,8 @@ body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-ser
 .opts{display:flex;flex-direction:column;gap:8px;}
 .opt{display:flex;align-items:flex-start;gap:10px;padding:12px 13px;border:1px solid var(--line);border-radius:11px;cursor:pointer;line-height:1.5;font-size:15px;transition:.12s;}
 .opt .key{flex:none;font-weight:700;min-width:22px;color:var(--muted);}
-.opt:hover{border-color:var(--pri);}
-.opt.selected{border-color:var(--pri);background:var(--pri-bg);}
+.opt:hover{border-color:var(--line);}
+.opt.selected{background:#f7f8fa;}
 .opt.correct{background:var(--okbg);border-color:var(--ok);}
 .opt.wrong{background:var(--badbg);border-color:var(--bad);}
 .opt .mark{margin-left:auto;flex:none;font-weight:700;}
@@ -105,6 +105,22 @@ let DATA=null;
 let MODE='practice';
 let pool=[], poolIdx=0;
 
+// 会话内题目状态缓存：key=题目标识 -> {opts(打乱后), ansSet, answer, explain, chosen(已选下标数组), ok, answered}
+let sessionState={};
+function qStateKey(q){ return `${q.ch.num}:${q.type}:${q.text.slice(0,24)}`; }
+
+// 错题本
+const MISTAKE_KEY='quiz_mistakes_v1'; // {qKey: {text, chNum, type, answer, explain, ts}}
+let mistakes={};
+try{ mistakes=JSON.parse(localStorage.getItem(MISTAKE_KEY)||'{}'); }catch(e){ mistakes={}; }
+function saveMistakes(){ try{ localStorage.setItem(MISTAKE_KEY, JSON.stringify(mistakes)); }catch(e){} }
+function addMistake(q, explain){
+  const k=qStateKey(q);
+  mistakes[k]={text:q.text, chNum:q.ch.num, type:q.type, answer:q.answer, explain:explain||q.explanation, ts:Date.now()};
+  saveMistakes();
+}
+function removeMistake(k){ delete mistakes[k]; saveMistakes(); }
+
 const LSKEY='quiz_marks_v1';
 let marks={};
 try{ marks=JSON.parse(localStorage.getItem(LSKEY)||'{}'); }catch(e){ marks={}; }
@@ -151,6 +167,9 @@ function showHome(){
         </div>
         <div class="menucard" onclick="startRandom()">
           <div class="ico">🎲</div><div><div class="ttl">随机模式</div><div class="sub">所有章节题型随机抽 1000 题${progLabel('practice:random',1000)?' · '+progLabel('practice:random',1000):''}</div></div><div class="arrow">›</div>
+        </div>
+        <div class="menucard" onclick="showMistakes()">
+          <div class="ico">📝</div><div><div class="ttl">错题本</div><div class="sub">${Object.keys(mistakes).length} 道错题</div></div><div class="arrow">›</div>
         </div>`
         : `
         <div class="menucard" onclick="showChapters()">
@@ -196,9 +215,56 @@ function showTypes(){
   c.innerHTML=html;
 }
 
+function showMistakes(){
+  const c=document.getElementById('content');
+  document.getElementById('pager').style.display='none';
+  const keys=Object.keys(mistakes);
+  let html=`<div class="backbar" onclick="showHome()"><span class="bk">‹</span>返回</div>`;
+  if(!keys.length){
+    html+='<div class="empty">暂无错题，答题时答错的题会自动收录到这里 ✨</div>';
+    c.innerHTML=html; return;
+  }
+  html+=`<div style="margin-bottom:10px;font-size:13px;color:var(--muted);">共 ${keys.length} 道错题</div><div class="menu">`;
+  keys.forEach(k=>{
+    const m=mistakes[k];
+    html+=`<div class="menucard" onclick="viewMistake('${k}')"><div class="ico">✗</div><div><div class="ttl" style="font-size:14px;">${esc(m.text.slice(0,50))}${m.text.length>50?'…':''}</div><div class="sub">${m.chNum}讲 · ${typeName(m.type)}</div></div><div class="arrow">›</div></div>`;
+  });
+  html+='</div>';
+  html+=`<button class="primary-btn mt" onclick="clearMistakes()">清空错题本</button>`;
+  c.innerHTML=html;
+}
+function viewMistake(k){
+  const m=mistakes[k];
+  const c=document.getElementById('content');
+  document.getElementById('pager').style.display='none';
+  const q=allQuestions().find(qq=>qStateKey(qq)===k);
+  let html=`<div class="backbar" onclick="showMistakes()"><span class="bk">‹</span>返回错题本</div><div class="qcard">`;
+  html+=`<div class="qmeta"><span>${m.chNum}讲</span><span class="badge${typeBadge(m.type)}">${typeName(m.type)}</span></div>`;
+  html+=`<div class="qtext">${esc(m.text)}</div>`;
+  if(q && q.options && q.options.length){
+    const opts=q.options.map(o=>{ const mm=o.match(/^([Ａ-ＺA-Z])[.．]?(.*)$/); if(mm){const l=mm[1].replace(/[Ａ-Ｚ]/g,cc=>String.fromCharCode(cc.charCodeAt(0)-0xFEE0)); return {label:l.toUpperCase(),text:mm[2].trim()};} return {label:'',text:o}; });
+    const ansSet=new Set(m.answer.replace(/[^A-Z]/g,'').split(''));
+    let ob='<div class="opts">';
+    opts.forEach(o=>{
+      const lbl=o.label;
+      ob+=`<div class="opt${ansSet.has(lbl)?' correct':''}"><span class="key">${esc(lbl)}</span><span>${esc(o.text)}</span>${ansSet.has(lbl)?'<span class="mark ok">✔</span>':''}</div>`;
+    });
+    ob+='</div>';
+    html+=ob;
+  }
+  html+=`<div class="study-answerbox"><span class="lbl">答案：<b>${esc(m.answer)}</b></span>`;
+  if(m.explain){ html+=`<div class="expl"><b>解析：</b>${esc(m.explain)}</div>`; }
+  html+=`</div><div class="markbar"><button class="markbar-btn notgot" onclick="removeMistake('${k}');showMistakes();">移出错题本</button></div></div>`;
+  c.innerHTML=html;
+}
+function clearMistakes(){
+  if(confirm('确定清空全部错题？')){ mistakes={}; saveMistakes(); showMistakes(); }
+}
+
 function enterSession(sid, qs, label){
   curSession=sid;
   pool=qs;
+  sessionState={}; // 每次进入新入口，重置会话内答题状态
   const saved=progress[sid];
   if(saved && saved.total===qs.length && saved.idx>0 && saved.idx<qs.length){
     poolIdx=saved.idx; // 自动续上
@@ -229,6 +295,7 @@ function startType(t){
 }
 function startRandom(){
   const sid=`${MODE}:random`;
+  sessionState={};
   const saved=progress[sid];
   let qs, startIdx=0;
   if(saved && saved.pool && saved.pool.length===1000){
@@ -265,6 +332,7 @@ function renderQuestion(){
 function doRestart(){
   if(!curSession) return;
   poolIdx=0;
+  sessionState={}; // 重新开始，清空答题状态
   if(curSession.endsWith(':random')){
     const qs=shuffle(allQuestions()).slice(0,1000);
     pool=qs;
@@ -282,24 +350,35 @@ function step(d){
 }
 
 class QuestionWidget{
-  constructor(root,q){ this.root=root; this.q=q; this.selected=[]; this.answered=false; this.study=(MODE==='study'); const body=document.createElement('div'); this.build(body); root.appendChild(body); }
+  constructor(root,q){ this.root=root; this.q=q; this.key=qStateKey(q); this.selected=[]; this.answered=false; this.study=(MODE==='study'); const body=document.createElement('div'); this.build(body); root.appendChild(body); }
   build(body){
     const q=this.q;
     const opts=this.parseOpts();
     const ansSet=new Set(q.answer.replace(/[^A-Z]/g,'').split(''));
-    // 答题模式下随机打乱选项顺序，并重映射答案字母
-    if(this.study){
-      this.buildStudy(body,opts,ansSet);
-      return;
+    if(this.study){ this.buildStudy(body,opts,ansSet); return; }
+    // 若已有会话状态（翻回旧题），复用打乱结果与答题状态，不重新打乱
+    let st=sessionState[this.key];
+    let opts2, ansSet2, answer2, explain2;
+    if(st && st.opts){
+      opts2=st.opts; ansSet2=new Set(st.ansSet); answer2=st.answer; explain2=st.explain;
+    } else {
+      const shuffled=this.shuffleOpts(opts, ansSet);
+      opts2=shuffled.opts; ansSet2=shuffled.ansSet; answer2=shuffled.answer; explain2=shuffled.explain;
+      st={opts:opts2, ansSet:[...ansSet2], answer:answer2, explain:explain2, chosen:[], ok:null, answered:false};
+      sessionState[this.key]=st;
     }
-    const shuffled = this.shuffleOpts(opts, ansSet);
-    const opts2=shuffled.opts, ansSet2=shuffled.ansSet, answer2=shuffled.answer, explain2=shuffled.explain;
     this.answerDisplay=answer2; this.explainDisplay=explain2;
+    this.state=st;
     if(q.type==='short'){
       const d=document.createElement('div');
-      d.innerHTML=`<div class="hint">简答题 · 先在心里作答，再点下方查看参考答案</div><button class="primary-btn">显示参考答案</button>`;
+      if(st.answered){
+        d.innerHTML=`<div class="hint">简答题 · 上次已查看</div>`;
+        this.showShortAns(d, st);
+      } else {
+        d.innerHTML=`<div class="hint">简答题 · 先在心里作答，再点下方查看参考答案</div><button class="primary-btn">显示参考答案</button>`;
+        d.querySelector('button').onclick=()=>{ this.showShortAns(d, st); this.autoAdvance(); };
+      }
       body.appendChild(d);
-      d.querySelector('button').onclick=()=>this.showShort(body);
       return;
     }
     const multi=q.type==='multiple';
@@ -312,14 +391,42 @@ class QuestionWidget{
       const lbl=o.label||String.fromCharCode(65+idx);
       const div=document.createElement('div'); div.className='opt'; div.dataset.idx=idx;
       div.innerHTML=`<span class="key">${esc(lbl)}</span><span>${esc(o.text)}</span><span class="mark"></span>`;
-      div.onclick=()=>this.onSelect(idx,multi,box,opts2,ansSet2,body);
+      if(st.answered){
+        const isAns=ansSet2.has(lbl);
+        const wasChosen=st.chosen.includes(idx);
+        if(isAns){ div.classList.add('correct'); div.querySelector('.mark').textContent='✔'; div.querySelector('.mark').className='mark ok'; }
+        else if(wasChosen){ div.classList.add('wrong'); div.querySelector('.mark').textContent='✘'; div.querySelector('.mark').className='mark bad'; }
+      } else if(st.chosen.includes(idx)){
+        div.classList.add('selected');
+      }
+      if(!st.answered) div.onclick=()=>this.onSelect(idx,multi,box,opts2,ansSet2,body);
       box.appendChild(div);
     });
     body.appendChild(box);
-    if(multi){
+    if(st.answered){
+      this.appendAnswerBox(body, st);
+    } else if(multi){
       const b=document.createElement('button'); b.className='primary-btn mt'; b.textContent='确认答案';
       b.onclick=()=>this.check(box,opts2,ansSet2,body,answer2,explain2); this.confirmBtn=b; body.appendChild(b);
     }
+  }
+  appendAnswerBox(body, st){
+    const ok=st.ok;
+    const box2=document.createElement('div');
+    box2.className='answer show '+(ok?'correct':'wrong');
+    const ansDisplay=this.answerDisplay||this.q.answer;
+    box2.innerHTML=`<span class="lbl">${ok?'✓ 回答正确':'✗ 回答错误'} · 正确答案：<b style="color:var(--ok)">${esc(ansDisplay)}</b></span>`;
+    const expText=this.explainDisplay||this.q.explanation;
+    if(expText){ const e=document.createElement('div'); e.className='expl'; e.innerHTML='<b>解析：</b>'+esc(expText); box2.appendChild(e); }
+    body.appendChild(box2);
+  }
+  showShortAns(container, st){
+    const d=document.createElement('div');
+    d.className='answer show correct';
+    d.innerHTML=`<span class="lbl">参考答案</span><div class="short-ans">${esc(this.q.answer)}</div>`;
+    if(this.q.explanation){ const e=document.createElement('div'); e.className='expl'; e.innerHTML='<b>解析：</b>'+esc(this.q.explanation); d.appendChild(e); }
+    container.appendChild(d);
+    st.answered=true; st.ok=true; sessionState[this.key]=st;
   }
   // 随机打乱选项，返回 {opts, ansSet, answer, explain}；answer 为打乱后的正确字母串
   shuffleOpts(opts, ansSet){
@@ -355,20 +462,28 @@ class QuestionWidget{
     return q.options.map(o=>{ const m=o.match(/^([Ａ-ＺA-Z])[.．]?(.*)$/); if(m){ const l=m[1].replace(/[Ａ-Ｚ]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)); return {label:l.toUpperCase(),text:m[2].trim()}; } return {label:'',text:o}; });
   }
   onSelect(idx,multi,box,opts,ansSet,body){
-    if(this.answered) return;
-    if(!multi){ this.selected=[idx]; this.check(box,opts,ansSet,body); return; }
-    const i=this.selected.indexOf(idx);
-    if(i>=0) this.selected.splice(i,1); else this.selected.push(idx);
-    Array.from(box.children).forEach((el,j)=>el.classList.toggle('selected',this.selected.includes(j)));
+    if(this.state.answered) return;
+    if(!multi){
+      this.state.chosen=[idx];
+      this.check(box,opts,ansSet,body,this.answerDisplay,this.explainDisplay);
+      return;
+    }
+    const i=this.state.chosen.indexOf(idx);
+    if(i>=0) this.state.chosen.splice(i,1); else this.state.chosen.push(idx);
+    sessionState[this.key]=this.state;
+    Array.from(box.children).forEach((el,j)=>el.classList.toggle('selected',this.state.chosen.includes(j)));
   }
   check(box,opts,ansSet,body,answerStr,explainStr){
-    if(this.answered) return; this.answered=true;
+    if(this.state.answered) return;
     const multi=this.q.type==='multiple';
-    const chosen=new Set(this.selected.map(i=>opts[i].label||String.fromCharCode(65+i)));
+    const chosen=new Set(this.state.chosen.map(i=>opts[i].label||String.fromCharCode(65+i)));
     const correctLbls=ansSet;
     let ok;
     if(multi){ ok=chosen.size===correctLbls.size&&[...correctLbls].every(x=>chosen.has(x)); }
-    else { const c=this.selected[0]; ok=(c!==undefined)&&correctLbls.has(opts[c].label||String.fromCharCode(65+c)); }
+    else { const c=this.state.chosen[0]; ok=(c!==undefined)&&correctLbls.has(opts[c].label||String.fromCharCode(65+c)); }
+    this.state.answered=true; this.state.ok=ok; this.state.chosen=this.state.chosen.slice();
+    sessionState[this.key]=this.state;
+    if(!ok) addMistake(this.q, this.explainDisplay);
     Array.from(box.children).forEach((el,j)=>{
       const lbl=opts[j].label||String.fromCharCode(65+j);
       const isAns=correctLbls.has(lbl);
@@ -377,30 +492,15 @@ class QuestionWidget{
       const mk=el.querySelector('.mark');
       if(isAns){mk.textContent='✔';mk.className='mark ok';} else if(chosen.has(lbl)){mk.textContent='✘';mk.className='mark bad';}
     });
-    const box2=document.createElement('div');
-    box2.className='answer show '+(ok?'correct':'wrong');
-    const ansDisplay=answerStr||this.answerDisplay||this.q.answer;
-    box2.innerHTML=`<span class="lbl">${ok?'✓ 回答正确':'✗ 回答错误'} · 正确答案：<b style="color:var(--ok)">${esc(ansDisplay)}</b></span>`;
-    const expText=explainStr||this.explainDisplay||this.q.explanation;
-    if(expText){ const e=document.createElement('div'); e.className='expl'; e.innerHTML='<b>解析：</b>'+esc(expText); box2.appendChild(e); }
-    body.appendChild(box2);
+    this.appendAnswerBox(body, this.state);
     if(this.confirmBtn) this.confirmBtn.style.display='none';
     this.autoAdvance();
   }
   autoAdvance(){
-    // 答题模式：作答后自动下一题（背题模式不自动跳）
+    // 答题模式：答完立即跳下一题（点击即跳）
     if(MODE==='study') return;
-    if(poolIdx>=pool.length-1) return; // 最后一题不跳
-    if(this._timer) clearTimeout(this._timer);
-    this._timer=setTimeout(()=>step(1), 1000);
-  }
-  showShort(body){
-    const d=document.createElement('div');
-    d.className='answer show correct';
-    d.innerHTML=`<span class="lbl">参考答案</span><div class="short-ans">${esc(this.q.answer)}</div>`;
-    if(this.q.explanation){ const e=document.createElement('div'); e.className='expl'; e.innerHTML='<b>解析：</b>'+esc(this.q.explanation); d.appendChild(e); }
-    body.appendChild(d);
-    this.autoAdvance();
+    if(poolIdx>=pool.length-1) return;
+    step(1);
   }
   buildStudy(body,opts,ansSet){
     const q=this.q;
