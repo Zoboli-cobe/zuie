@@ -434,8 +434,8 @@ function startExam(){
     if(cfg.type==='single') src=all.filter(q=>q.type==='single');
     else if(cfg.type==='multiple') src=all.filter(q=>q.type==='multiple');
     else if(cfg.type==='short') src=all.filter(q=>q.type==='short');
-    else if(cfg.type==='judge') src=all.filter(q=>q.type==='single'||q.type==='multiple');
-    else if(cfg.type==='fill') src=all.filter(q=>(q.type==='single'||q.type==='multiple') && /[（(]\s*[）)]/.test(q.text));
+    else if(cfg.type==='judge') src=all.filter(q=>q.type==='single' && /[（(]\s*[）)]/.test(q.text));
+    else if(cfg.type==='fill') src=all.filter(q=>q.type==='single' && /[（(]\s*[）)]/.test(q.text));
     const picked=shuffle(src).slice(0,cfg.count);
     picked.forEach(srcQ=>{
       papers.push(makePaper(cfg.type, srcQ, qid++, cfg.score));
