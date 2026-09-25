@@ -287,7 +287,14 @@ class QuestionWidget{
     const q=this.q;
     const opts=this.parseOpts();
     const ansSet=new Set(q.answer.replace(/[^A-Z]/g,'').split(''));
-    if(this.study){ this.buildStudy(body,opts,ansSet); return; }
+    // 答题模式下随机打乱选项顺序，并重映射答案字母
+    if(this.study){
+      this.buildStudy(body,opts,ansSet);
+      return;
+    }
+    const shuffled = this.shuffleOpts(opts, ansSet);
+    const opts2=shuffled.opts, ansSet2=shuffled.ansSet, answer2=shuffled.answer, explain2=shuffled.explain;
+    this.answerDisplay=answer2; this.explainDisplay=explain2;
     if(q.type==='short'){
       const d=document.createElement('div');
       d.innerHTML=`<div class="hint">简答题 · 先在心里作答，再点下方查看参考答案</div><button class="primary-btn">显示参考答案</button>`;
@@ -301,18 +308,46 @@ class QuestionWidget{
     hint.textContent=multi?'多选题：勾选所有正确项后确认':'单选题：点击选择答案';
     body.appendChild(hint);
     const box=document.createElement('div'); box.className='opts';
-    opts.forEach((o,idx)=>{
+    opts2.forEach((o,idx)=>{
       const lbl=o.label||String.fromCharCode(65+idx);
       const div=document.createElement('div'); div.className='opt'; div.dataset.idx=idx;
       div.innerHTML=`<span class="key">${esc(lbl)}</span><span>${esc(o.text)}</span><span class="mark"></span>`;
-      div.onclick=()=>this.onSelect(idx,multi,box,opts,ansSet,body);
+      div.onclick=()=>this.onSelect(idx,multi,box,opts2,ansSet2,body);
       box.appendChild(div);
     });
     body.appendChild(box);
     if(multi){
       const b=document.createElement('button'); b.className='primary-btn mt'; b.textContent='确认答案';
-      b.onclick=()=>this.check(box,opts,ansSet,body); this.confirmBtn=b; body.appendChild(b);
+      b.onclick=()=>this.check(box,opts2,ansSet2,body,answer2,explain2); this.confirmBtn=b; body.appendChild(b);
     }
+  }
+  // 随机打乱选项，返回 {opts, ansSet, answer, explain}；answer 为打乱后的正确字母串
+  shuffleOpts(opts, ansSet){
+    const perm=shuffle(opts.map((_,i)=>i)); // perm[newPos] = oldIdx
+    const newOpts=perm.map((oldIdx,newPos)=>{
+      const o=opts[oldIdx];
+      return {...o, label:String.fromCharCode(65+newPos)};
+    });
+    // 旧字母 -> 新字母 映射
+    const oldToNew={};
+    opts.forEach((o,oldIdx)=>{
+      const oldLbl=o.label||String.fromCharCode(65+oldIdx);
+      const newPos=perm.indexOf(oldIdx);
+      oldToNew[oldLbl]=String.fromCharCode(65+newPos);
+    });
+    const newAnsSet=new Set([...ansSet].map(x=>oldToNew[x]||x));
+    const answer=[...newAnsSet].sort().join('');
+    // 重写解析中「X项 / X、Y项」这类选项字母引用，避免打乱后误导
+    let explain=this.q.explanation;
+    if(explain){
+      explain=explain.replace(/[Ａ-ＥA-E]([、,，][Ａ-ＥA-E])*项/g,(m)=>{
+        return m.replace(/[Ａ-ＥA-E]/g,x=>{
+          const half=x.replace(/[Ａ-Ｅ]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0));
+          return oldToNew[half]||x;
+        });
+      });
+    }
+    return {opts:newOpts, ansSet:newAnsSet, answer, explain};
   }
   parseOpts(){
     const q=this.q;
@@ -326,7 +361,7 @@ class QuestionWidget{
     if(i>=0) this.selected.splice(i,1); else this.selected.push(idx);
     Array.from(box.children).forEach((el,j)=>el.classList.toggle('selected',this.selected.includes(j)));
   }
-  check(box,opts,ansSet,body){
+  check(box,opts,ansSet,body,answerStr,explainStr){
     if(this.answered) return; this.answered=true;
     const multi=this.q.type==='multiple';
     const chosen=new Set(this.selected.map(i=>opts[i].label||String.fromCharCode(65+i)));
@@ -344,8 +379,10 @@ class QuestionWidget{
     });
     const box2=document.createElement('div');
     box2.className='answer show '+(ok?'correct':'wrong');
-    box2.innerHTML=`<span class="lbl">${ok?'✓ 回答正确':'✗ 回答错误'} · 正确答案：<b style="color:var(--ok)">${esc(this.q.answer)}</b></span>`;
-    if(this.q.explanation){ const e=document.createElement('div'); e.className='expl'; e.innerHTML='<b>解析：</b>'+esc(this.q.explanation); box2.appendChild(e); }
+    const ansDisplay=answerStr||this.answerDisplay||this.q.answer;
+    box2.innerHTML=`<span class="lbl">${ok?'✓ 回答正确':'✗ 回答错误'} · 正确答案：<b style="color:var(--ok)">${esc(ansDisplay)}</b></span>`;
+    const expText=explainStr||this.explainDisplay||this.q.explanation;
+    if(expText){ const e=document.createElement('div'); e.className='expl'; e.innerHTML='<b>解析：</b>'+esc(expText); box2.appendChild(e); }
     body.appendChild(box2);
     if(this.confirmBtn) this.confirmBtn.style.display='none';
     this.autoAdvance();
@@ -355,7 +392,7 @@ class QuestionWidget{
     if(MODE==='study') return;
     if(poolIdx>=pool.length-1) return; // 最后一题不跳
     if(this._timer) clearTimeout(this._timer);
-    this._timer=setTimeout(()=>step(1), 1400);
+    this._timer=setTimeout(()=>step(1), 1000);
   }
   showShort(body){
     const d=document.createElement('div');
