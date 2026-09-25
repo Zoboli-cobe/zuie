@@ -46,6 +46,17 @@ button:active{transform:scale(.98);}
 .pager button{min-width:80px;}
 .pager .pageinfo{color:var(--muted);font-size:14px;}
 .short-ans{white-space:pre-wrap;}
+.modebar{display:flex;gap:8px;align-items:center;margin-top:2px;}
+.modebar button.active{background:var(--pri);color:#fff;border-color:var(--pri);}
+.opt.study-correct{background:var(--okbg);border-color:var(--ok);font-weight:600;}
+.opt.study-correct .key{color:var(--ok);}
+.study-answerbox{display:block;margin-top:14px;padding:14px;border-radius:10px;line-height:1.65;background:#f0f7ff;border:1px solid var(--pri);}
+.study-answerbox .lbl{font-weight:700;display:block;margin-bottom:4px;color:var(--pri-d);}
+.markbar{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;}
+.markbar button.small{padding:6px 12px;font-size:13px;}
+.markbar button.got{background:var(--okbg);border-color:var(--ok);color:var(--ok);}
+.markbar button.notgot{background:var(--badbg);border-color:var(--bad);color:var(--bad);}
+.modehint{color:var(--muted);font-size:13px;margin-bottom:10px;}
 footer{text-align:center;color:var(--muted);font-size:12px;padding:20px;}
 .hint{color:var(--muted);font-size:13px;margin-bottom:8px;}
 .mt{margin-top:4px;}
@@ -65,6 +76,11 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:20px;}
     <button id="randBtn" class="primary">随机抽题</button>
     <button id="resetBtn" style="display:none">返回列表</button>
   </div>
+  <div class="modebar">
+    <button id="modePractice" class="active">答题模式</button>
+    <button id="modeStudy">背题模式</button>
+    <button id="markFilterBtn" style="display:none">只看不会的</button>
+  </div>
 </div>
 <div class="stats" id="stats"></div>
 <div class="wrap" id="content"></div>
@@ -72,8 +88,18 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:20px;}
 
 <script>
 let DATA=null, VIEW='list';
+let MODE='practice'; // 'practice' | 'study'
 let pool=[], poolIdx=0;
 let listPage=0, LIST_PER_PAGE=30;
+let onlyNotGot=false;
+
+const LSKEY='quiz_marks_v1'; // {chapterNum:{qType:index}} marks question as "不会"
+let marks={};
+try{ marks=JSON.parse(localStorage.getItem(LSKEY)||'{}'); }catch(e){ marks={}; }
+function saveMarks(){ try{ localStorage.setItem(LSKEY, JSON.stringify(marks)); }catch(e){} }
+function qkey(q){ return `${q.ch.num}:${q.type}:${q.text.slice(0,20)}`; }
+function isMarked(q){ return !!marks[qkey(q)]; }
+function toggleMark(q){ const k=qkey(q); if(marks[k]) delete marks[k]; else marks[k]=1; saveMarks(); }
 
 function typeName(t){return {single:'单选题',multiple:'多选题',short:'简答题'}[t]||t;}
 
@@ -90,6 +116,16 @@ function buildChapterSelect(){
   document.getElementById('typeSel').onchange=()=>{listPage=0;render();};
   document.getElementById('randBtn').onclick=randomQuestion;
   document.getElementById('resetBtn').onclick=()=>{VIEW='list';document.getElementById('resetBtn').style.display='none';render();};
+  const modePractice=document.getElementById('modePractice');
+  const modeStudy=document.getElementById('modeStudy');
+  modePractice.onclick=()=>{MODE='practice';modePractice.classList.add('active');modeStudy.classList.remove('active');listPage=0;updateMarkFilterVisibility();render();};
+  modeStudy.onclick=()=>{MODE='study';modeStudy.classList.add('active');modePractice.classList.remove('active');listPage=0;updateMarkFilterVisibility();render();};
+  const markFilter=document.getElementById('markFilterBtn');
+  markFilter.onclick=()=>{onlyNotGot=!onlyNotGot;markFilter.classList.toggle('active',onlyNotGot);markFilter.textContent=onlyNotGot?'显示全部':'只看不会的';listPage=0;render();};
+}
+function updateMarkFilterVisibility(){
+  const b=document.getElementById('markFilterBtn');
+  b.style.display=(MODE==='study')?'inline-block':'none';
 }
 
 function flattened(){
@@ -100,13 +136,28 @@ function flattened(){
     if(chN && ch.num!==chN) return;
     ch.sections.forEach(s=>{
       if(tSel!=='all' && s.type!==tSel) return;
-      s.questions.forEach(q=>out.push({...q,type:s.type,ch:ch}));
+      s.questions.forEach(q=>{
+        const o={...q,type:s.type,ch:ch};
+        if(onlyNotGot && !isMarked(o)) return;
+        out.push(o);
+      });
     });
   });
   return out;
 }
 
 function render(){
+  if(VIEW==='list' && MODE==='study'){
+    const qs=flattened();
+    if(!qs.length){
+      document.getElementById('stats').textContent='无匹配题目';
+      document.getElementById('content').innerHTML='<div class="card">无匹配题目</div>';
+      return;
+    }
+    pool=qs; poolIdx=0;
+    renderSingle();
+    return;
+  }
   if(VIEW==='list'){
     const qs=flattened();
     const stats=document.getElementById('stats');
@@ -148,6 +199,7 @@ class QuestionWidget{
   constructor(root,q){
     this.root=root; this.q=q;
     this.selected=[]; this.answered=false;
+    this.study = MODE==='study';
     const body=document.createElement('div');
     // question text already rendered by caller; we append body
     this.build(body);
@@ -158,6 +210,10 @@ class QuestionWidget{
     const opts=this.parseOpts();
     // answer labels set
     const ansSet=new Set(q.answer.replace(/[^A-Z]/g,'').split(''));
+    if(this.study){
+      this.buildStudy(body,opts,ansSet);
+      return;
+    }
     if(q.type==='short'){
       const d=document.createElement('div');
       d.innerHTML=`<div class="hint">简答题 · 先尝试作答，再点下方查看参考答案</div>
@@ -273,6 +329,80 @@ class QuestionWidget{
     }
     body.appendChild(d);
   }
+
+  buildStudy(body,opts,ansSet){
+    const q=this.q;
+    if(q.type==='short'){
+      const box=document.createElement('div');
+      box.className='study-answerbox';
+      box.innerHTML=`<span class="lbl">参考答案</span><div class="short-ans">${esc(q.answer)}</div>`;
+      if(q.explanation){
+        const e=document.createElement('div');
+        e.className='expl';
+        e.innerHTML='<b>解析：</b>'+esc(q.explanation);
+        box.appendChild(e);
+      }
+      body.appendChild(box);
+      body.appendChild(this.makeMarkBar());
+      return;
+    }
+    const optsBox=document.createElement('div');
+    optsBox.className='opts';
+    opts.forEach((o,idx)=>{
+      const lbl=o.label||String.fromCharCode(65+idx);
+      const div=document.createElement('div');
+      div.className='opt';
+      if(ansSet.has(lbl)) div.classList.add('study-correct');
+      div.innerHTML=`<span class="key">${esc(lbl)}</span><span>${esc(o.text)}</span>${ansSet.has(lbl)?'<span class="mark">✔</span>':''}`;
+      optsBox.appendChild(div);
+    });
+    body.appendChild(optsBox);
+    // answer summary
+    const box=document.createElement('div');
+    box.className='study-answerbox';
+    box.innerHTML=`<span class="lbl">答案：<b>${esc(q.answer)}</b></span>`;
+    if(q.explanation){
+      const e=document.createElement('div');
+      e.className='expl';
+      e.innerHTML='<b>解析：</b>'+esc(q.explanation);
+      box.appendChild(e);
+    }
+    body.appendChild(box);
+    body.appendChild(this.makeMarkBar());
+  }
+
+  makeMarkBar(){
+    const bar=document.createElement('div');
+    bar.className='markbar';
+    const marked=isMarked(this.q);
+    const got=document.createElement('button');
+    got.className='small got-btn'+(marked?'':' got');
+    got.textContent='标记：会了';
+    got.onclick=()=>{ this.setMark(false, got, ngot); };
+    const ngot=document.createElement('button');
+    ngot.className='small ngot-btn'+(marked?' notgot':'');
+    ngot.textContent='标记：不会';
+    ngot.onclick=()=>{ this.setMark(true, got, ngot); };
+    this.refreshMarkBtns(marked, got, ngot);
+    bar.appendChild(got);
+    bar.appendChild(ngot);
+    return bar;
+  }
+  refreshMarkBtns(marked, got, ngot){
+    got.textContent=marked?'会了 ✓':'标记：会了';
+    got.className='small got-btn'+(marked?'':' got');
+    ngot.textContent=marked?'不会 ✗ (已收藏)':'标记：不会';
+    ngot.className='small ngot-btn'+(marked?' notgot':'');
+  }
+  setMark(wantNotGot, got, ngot){
+    const prev=isMarked(this.q);
+    if(wantNotGot){
+      if(!prev) toggleMark(this.q); // set 不会
+    } else {
+      if(prev) toggleMark(this.q); // clear (会了)
+    }
+    this.refreshMarkBtns(isMarked(this.q), got, ngot);
+  }
 }
 
 function randomQuestion(){
@@ -286,7 +416,8 @@ function randomQuestion(){
 
 function renderSingle(){
   const q=pool[poolIdx];
-  document.getElementById('stats').textContent=`随机抽题 · ${pool.length} 题中第 ${poolIdx+1} 题 · ${q.ch.num}讲 ${typeName(q.type)}`;
+  const modeLabel=MODE==='study'?'背题 · ':(VIEW==='random'?'随机抽题 · ':'');
+  document.getElementById('stats').textContent=`${modeLabel}${pool.length} 题中第 ${poolIdx+1} 题 · ${q.ch.num}讲 ${typeName(q.type)}`;
   const c=document.getElementById('content');
   c.innerHTML='';
   const card=document.createElement('div');
