@@ -142,7 +142,7 @@ let pool=[], poolIdx=0;
 
 // 会话内题目状态缓存：key=题目标识 -> {opts(打乱后), ansSet, answer, explain, chosen(已选下标数组), ok, answered}
 let sessionState={};
-function qStateKey(q){ return `${q.ch.num}:${q.type}:${q.text.slice(0,24)}`; }
+function qStateKey(q){ return `${q.ch.num}:${q.type}:${q.text}`; }
 
 // 错题本
 const MISTAKE_KEY='quiz_mistakes_v1'; // {qKey: {text, chNum, type, answer, explain, ts}}
