@@ -73,8 +73,6 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:20px;}
       <option value="multiple">多选题</option>
       <option value="short">简答题</option>
     </select>
-    <button id="randBtn" class="primary">随机抽题</button>
-    <button id="resetBtn" style="display:none">返回列表</button>
   </div>
   <div class="modebar">
     <button id="modePractice" class="active">答题模式</button>
@@ -87,10 +85,9 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:20px;}
 <footer>共 38 讲 · 3065 题（单选 2050 / 多选 810 / 简答 205）</footer>
 
 <script>
-let DATA=null, VIEW='list';
+let DATA=null;
 let MODE='practice'; // 'practice' | 'study'
 let pool=[], poolIdx=0;
-let listPage=0, LIST_PER_PAGE=30;
 let onlyNotGot=false;
 
 const LSKEY='quiz_marks_v1'; // {chapterNum:{qType:index}} marks question as "不会"
@@ -112,20 +109,39 @@ function buildChapterSelect(){
     o.textContent=`${ch.num}. ${ch.title}`;
     sel.appendChild(o);
   });
-  sel.onchange=()=>{listPage=0;render();};
-  document.getElementById('typeSel').onchange=()=>{listPage=0;render();};
-  document.getElementById('randBtn').onclick=randomQuestion;
-  document.getElementById('resetBtn').onclick=()=>{VIEW='list';document.getElementById('resetBtn').style.display='none';render();};
+  sel.onchange=()=>{restartPool();};
+  document.getElementById('typeSel').onchange=()=>{restartPool();};
   const modePractice=document.getElementById('modePractice');
   const modeStudy=document.getElementById('modeStudy');
-  modePractice.onclick=()=>{MODE='practice';modePractice.classList.add('active');modeStudy.classList.remove('active');listPage=0;updateMarkFilterVisibility();render();};
-  modeStudy.onclick=()=>{MODE='study';modeStudy.classList.add('active');modePractice.classList.remove('active');listPage=0;updateMarkFilterVisibility();render();};
+  modePractice.onclick=()=>{MODE='practice';modePractice.classList.add('active');modeStudy.classList.remove('active');updateMarkFilterVisibility();restartPool();};
+  modeStudy.onclick=()=>{MODE='study';modeStudy.classList.add('active');modePractice.classList.remove('active');updateMarkFilterVisibility();restartPool();};
   const markFilter=document.getElementById('markFilterBtn');
-  markFilter.onclick=()=>{onlyNotGot=!onlyNotGot;markFilter.classList.toggle('active',onlyNotGot);markFilter.textContent=onlyNotGot?'显示全部':'只看不会的';listPage=0;render();};
+  markFilter.onclick=()=>{onlyNotGot=!onlyNotGot;markFilter.classList.toggle('active',onlyNotGot);markFilter.textContent=onlyNotGot?'显示全部':'只看不会的';restartPool();};
 }
 function updateMarkFilterVisibility(){
   const b=document.getElementById('markFilterBtn');
   b.style.display=(MODE==='study')?'inline-block':'none';
+}
+
+// build a shuffled pool of all (filtered) questions and start at 0
+function restartPool(){
+  const qs=flattened();
+  if(!qs.length){
+    document.getElementById('stats').textContent='无匹配题目';
+    document.getElementById('content').innerHTML='<div class="card">无匹配题目</div>';
+    return;
+  }
+  pool=shuffle(qs);
+  poolIdx=0;
+  renderSingle();
+}
+function shuffle(arr){
+  const a=arr.slice();
+  for(let i=a.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [a[i],a[j]]=[a[j],a[i]];
+  }
+  return a;
 }
 
 function flattened(){
@@ -147,49 +163,7 @@ function flattened(){
 }
 
 function render(){
-  if(VIEW==='list' && MODE==='study'){
-    const qs=flattened();
-    if(!qs.length){
-      document.getElementById('stats').textContent='无匹配题目';
-      document.getElementById('content').innerHTML='<div class="card">无匹配题目</div>';
-      return;
-    }
-    pool=qs; poolIdx=0;
-    renderSingle();
-    return;
-  }
-  if(VIEW==='list'){
-    const qs=flattened();
-    const stats=document.getElementById('stats');
-    const total=qs.length;
-    const pages=Math.ceil(total/LIST_PER_PAGE)||1;
-    if(listPage>=pages) listPage=0;
-    const start=listPage*LIST_PER_PAGE;
-    const qsPage=qs.slice(start,start+LIST_PER_PAGE);
-    stats.innerHTML=`当前筛选共 ${total} 题 · 第 ${listPage+1}/${pages} 页（每页 ${LIST_PER_PAGE} 题）`;
-    const c=document.getElementById('content');
-    c.innerHTML='';
-    if(!qsPage.length){c.innerHTML='<div class="card">无匹配题目</div>';return;}
-    qsPage.forEach((q,i)=>{
-      const card=document.createElement('div');
-      card.className='card';
-      card.innerHTML=`
-        <div class="qhead"><span class="qnum">${start+i+1}.</span>${esc(q.text)}<span class="tag">${q.ch.num}讲 · ${typeName(q.type)}</span></div>`;
-      c.appendChild(card);
-      new QuestionWidget(card,q);
-    });
-    // list pager
-    const pg=document.createElement('div');
-    pg.className='pager';
-    pg.innerHTML=`<button id="lprev">上一页</button><span class="pageinfo">第 ${listPage+1} / ${pages} 页</span><button id="lnext">下一页</button>`;
-    c.appendChild(pg);
-    document.getElementById('lprev').onclick=()=>{if(listPage>0){listPage--;render();window.scrollTo(0,0);}};
-    document.getElementById('lnext').onclick=()=>{if(listPage<pages-1){listPage++;render();window.scrollTo(0,0);}};
-    document.getElementById('lprev').disabled=(listPage===0);
-    document.getElementById('lnext').disabled=(listPage>=pages-1);
-  } else {
-    renderSingle();
-  }
+  restartPool();
 }
 
 function esc(s){return (s||'').replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
@@ -405,18 +379,9 @@ class QuestionWidget{
   }
 }
 
-function randomQuestion(){
-  const qs=flattened();
-  if(!qs.length){alert('当前筛选无题目');return;}
-  pool=qs; poolIdx=Math.floor(Math.random()*qs.length);
-  VIEW='single';
-  document.getElementById('resetBtn').style.display='inline-block';
-  renderSingle();
-}
-
 function renderSingle(){
   const q=pool[poolIdx];
-  const modeLabel=MODE==='study'?'背题 · ':(VIEW==='random'?'随机抽题 · ':'');
+  const modeLabel=MODE==='study'?'背题 · ':'答题 · ';
   document.getElementById('stats').textContent=`${modeLabel}${pool.length} 题中第 ${poolIdx+1} 题 · ${q.ch.num}讲 ${typeName(q.type)}`;
   const c=document.getElementById('content');
   c.innerHTML='';
