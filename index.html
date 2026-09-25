@@ -287,11 +287,12 @@ function showMistakes(){
   keys.forEach(k=>{ const m=mistakes[k]; const g=m.chNum||'其他'; if(!groups[g]) groups[g]=[]; groups[g].push({k,m}); });
   const sortedCh=Object.keys(groups).sort((a,b)=>(parseInt(a)||0)-(parseInt(b)||0));
   html+=`<div style="margin-bottom:10px;font-size:13px;color:var(--muted);">共 ${keys.length} 道错题 · 按章节分类</div>`;
+  html+=`<button class="primary-btn" style="margin-bottom:14px;" onclick="startMistakePractice('')">🎯 练习全部错题</button>`;
   sortedCh.forEach(ch=>{
     const items=groups[ch];
     html+=`<div style="margin:12px 0 6px;font-size:14px;font-weight:700;color:var(--pri);">第 ${ch} 讲（${items.length} 题）</div><div class="menu">`;
     items.forEach(({k,m})=>{
-      html+=`<div class="menucard" onclick="viewMistake('${k}')"><div class="ico">✗</div><div><div class="ttl" style="font-size:14px;">${esc(m.text.slice(0,50))}${m.text.length>50?'…':''}</div><div class="sub">${typeName(m.type)}</div></div><div class="arrow">›</div></div>`;
+      html+=`<div class="menucard" onclick="startMistakePractice('${k}')"><div class="ico">✗</div><div><div class="ttl" style="font-size:14px;">${esc(m.text.slice(0,50))}${m.text.length>50?'…':''}</div><div class="sub">${typeName(m.type)} · 点击重做</div></div><div class="arrow">›</div></div>`;
     });
     html+='</div>';
   });
@@ -330,6 +331,23 @@ function toggleStarFromMistake(k){
 }
 function clearMistakes(){
   if(confirm('确定清空全部错题？')){ mistakes={}; saveMistakes(); showMistakes(); }
+}
+// 错题本可答题：进入错题练习（从指定题开始，可翻全部错题）
+function startMistakePractice(k){
+  const qs=[];
+  Object.keys(mistakes).forEach(key=>{
+    const src=allQuestions().find(qq=>qStateKey(qq)===key);
+    if(src) qs.push(src);
+  });
+  if(!qs.length){ showMistakes(); return; }
+  pool=qs;
+  const idx=qs.findIndex(q=>qStateKey(q)===k);
+  poolIdx=idx>=0?idx:0;
+  curSession='practice:mistakes';
+  sessionState={};
+  document.getElementById('pager').style.display='flex';
+  renderQuestion();
+  window.scrollTo(0,0);
 }
 function showStars(){
   const c=document.getElementById('content');
@@ -449,7 +467,11 @@ function renderQuestion(){
   // 顶部增加「从头开始 / 清空本项记忆」操作
   const restart=document.createElement('div');
   restart.style.cssText='text-align:center;padding:8px 0 0;';
-  restart.innerHTML=`<a href="javascript:void(0)" style="color:#8a8f9c;font-size:12px;text-decoration:none;margin:0 8px;" onclick="doRestart()">↺ 从第 1 题重新开始</a><span style="color:#d0d4dc;">·</span><a href="javascript:void(0)" style="color:#dc2626;font-size:12px;text-decoration:none;margin:0 8px;" onclick="resetCategory()">🗑 清空本项记忆</a>`;
+  if(curSession==='practice:mistakes'){
+    restart.innerHTML=`<a href="javascript:void(0)" style="color:#8a8f9c;font-size:12px;text-decoration:none;margin:0 8px;" onclick="doRestart()">↺ 重新练习</a><span style="color:#d0d4dc;">·</span><a href="javascript:void(0)" style="color:#3b82f6;font-size:12px;text-decoration:none;margin:0 8px;" onclick="showMistakes()">返回错题本</a>`;
+  } else {
+    restart.innerHTML=`<a href="javascript:void(0)" style="color:#8a8f9c;font-size:12px;text-decoration:none;margin:0 8px;" onclick="doRestart()">↺ 从第 1 题重新开始</a><span style="color:#d0d4dc;">·</span><a href="javascript:void(0)" style="color:#dc2626;font-size:12px;text-decoration:none;margin:0 8px;" onclick="resetCategory()">🗑 清空本项记忆</a>`;
+  }
   c.appendChild(restart);
 }
 function doRestart(){
@@ -847,7 +869,7 @@ class QuestionWidget{
     const multi=q.type==='multiple';
     const hint=document.createElement('div');
     hint.className='hint';
-    hint.textContent=multi?'多选题：勾选所有正确项后确认':'单选题：点击选择答案';
+    hint.textContent=multi?'多选题：点击选项即时判断（全选对即通过）':'单选题：点击选择答案';
     body.appendChild(hint);
     const box=document.createElement('div'); box.className='opts';
     opts2.forEach((o,idx)=>{
@@ -868,9 +890,6 @@ class QuestionWidget{
     body.appendChild(box);
     if(st.answered){
       this.appendAnswerBox(body, st);
-    } else if(multi){
-      const b=document.createElement('button'); b.className='primary-btn mt'; b.textContent='确认答案';
-      b.onclick=()=>this.check(box,opts2,ansSet2,body,answer2,explain2); this.confirmBtn=b; body.appendChild(b);
     }
   }
   appendAnswerBox(body, st){
@@ -945,10 +964,24 @@ class QuestionWidget{
       this.check(box,opts,ansSet,body,this.answerDisplay,this.explainDisplay);
       return;
     }
-    const i=this.state.chosen.indexOf(idx);
-    if(i>=0) this.state.chosen.splice(i,1); else this.state.chosen.push(idx);
+    // 多选题：点击即判断
+    const lbl=opts[idx].label||String.fromCharCode(65+idx);
+    const isAns=ansSet.has(lbl);
+    if(!isAns){
+      // 点了错误项 → 立即判错
+      if(!this.state.chosen.includes(idx)) this.state.chosen.push(idx);
+      this.check(box,opts,ansSet,body,this.answerDisplay,this.explainDisplay);
+      return;
+    }
+    // 正确项：标记勾选
+    if(!this.state.chosen.includes(idx)) this.state.chosen.push(idx);
     sessionState[this.key]=this.state;
     Array.from(box.children).forEach((el,j)=>el.classList.toggle('selected',this.state.chosen.includes(j)));
+    // 所有正确项都选中 → 判对
+    const allSelected=[...ansSet].every(l=>this.state.chosen.some(i=>(opts[i].label||String.fromCharCode(65+i))===l));
+    if(allSelected){
+      this.check(box,opts,ansSet,body,this.answerDisplay,this.explainDisplay);
+    }
   }
   check(box,opts,ansSet,body,answerStr,explainStr){
     if(this.state.answered) return;
@@ -961,6 +994,7 @@ class QuestionWidget{
     this.state.answered=true; this.state.ok=ok; this.state.chosen=this.state.chosen.slice();
     sessionState[this.key]=this.state;
     if(!ok) addMistake(this.q, this.explainDisplay);
+    else if(curSession==='practice:mistakes'){ removeMistake(this.key); }
     Array.from(box.children).forEach((el,j)=>{
       const lbl=opts[j].label||String.fromCharCode(65+j);
       const isAns=correctLbls.has(lbl);
