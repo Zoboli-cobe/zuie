@@ -125,7 +125,7 @@ const LSKEY='quiz_marks_v1';
 let marks={};
 try{ marks=JSON.parse(localStorage.getItem(LSKEY)||'{}'); }catch(e){ marks={}; }
 function saveMarks(){ try{ localStorage.setItem(LSKEY, JSON.stringify(marks)); }catch(e){} }
-function qkey(q){ return `${q.ch.num}:${q.type}:${q.text.slice(0,20)}`; }
+function qkey(q){ return qStateKey(q); }
 function isMarked(q){ return !!marks[qkey(q)]; }
 function toggleMark(q){ const k=qkey(q); if(marks[k]) delete marks[k]; else marks[k]=1; saveMarks(); }
 
@@ -323,10 +323,10 @@ function renderQuestion(){
   c.appendChild(card);
   new QuestionWidget(card,q);
   pager.innerHTML=`<button onclick="step(-1)">‹ 上一题</button><span class="info">${poolIdx+1}/${pool.length}</span><button class="prim" onclick="step(1)">下一题 ›</button>`;
-  // 顶部增加「从头开始」小链接
+  // 顶部增加「从头开始 / 清空本项记忆」操作
   const restart=document.createElement('div');
   restart.style.cssText='text-align:center;padding:8px 0 0;';
-  restart.innerHTML=`<a href="javascript:void(0)" style="color:#8a8f9c;font-size:12px;text-decoration:none;" onclick="doRestart()">↺ 从第 1 题重新开始</a>`;
+  restart.innerHTML=`<a href="javascript:void(0)" style="color:#8a8f9c;font-size:12px;text-decoration:none;margin:0 8px;" onclick="doRestart()">↺ 从第 1 题重新开始</a><span style="color:#d0d4dc;">·</span><a href="javascript:void(0)" style="color:#dc2626;font-size:12px;text-decoration:none;margin:0 8px;" onclick="resetCategory()">🗑 清空本项记忆</a>`;
   c.appendChild(restart);
 }
 function doRestart(){
@@ -338,6 +338,27 @@ function doRestart(){
     pool=qs;
     progress[curSession]={idx:0,total:pool.length,pool:qs,ts:Date.now()};
   }
+  saveSessionProg();
+  renderQuestion();
+  window.scrollTo(0,0);
+}
+// 清空当前子分类的全部记忆（进度 + 会/不会标记 + 错题）并重新开始
+function resetCategory(){
+  if(!curSession) return;
+  if(!confirm('确定清空「本项」的答题进度、会/不会标记和错题记录，并从头开始吗？')) return;
+  delete progress[curSession]; saveProgress();
+  pool.forEach(q=>{
+    const k=qStateKey(q);
+    if(marks[k]) delete marks[k];
+    if(mistakes[k]) delete mistakes[k];
+  });
+  saveMarks(); saveMistakes();
+  sessionState={};
+  if(curSession.endsWith(':random')){
+    const qs=shuffle(allQuestions()).slice(0,1000);
+    pool=qs;
+  }
+  poolIdx=0;
   saveSessionProg();
   renderQuestion();
   window.scrollTo(0,0);
