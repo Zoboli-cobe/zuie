@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>血液净化理论考试题库</title>
 <style>
 :root{
@@ -12,6 +12,7 @@
   --chip:#eef1f6;
 }
 *{box-sizing:border-box}
+html,body{touch-action:pan-x pan-y;}
 body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--txt);-webkit-font-smoothing:antialiased;}
 .top{position:sticky;top:0;z-index:50;background:#fff;border-bottom:1px solid var(--line);padding:10px 14px 0;}
 .brand{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
@@ -123,6 +124,18 @@ body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-ser
 <div class="pager" id="pager" style="display:none"></div>
 
 <script>
+// 禁止网页缩放（捏合/DoubleTap）
+document.addEventListener('gesturestart',function(e){e.preventDefault();});
+document.addEventListener('gesturechange',function(e){e.preventDefault();});
+document.addEventListener('gestureend',function(e){e.preventDefault();});
+document.addEventListener('dblclick',function(e){e.preventDefault();},{passive:false});
+let _lastTouchEnd=0;
+document.addEventListener('touchend',function(e){
+  const now=Date.now();
+  if(now-_lastTouchEnd<=300){ e.preventDefault(); }
+  _lastTouchEnd=now;
+},{passive:false});
+document.addEventListener('touchmove',function(e){ if(e.touches.length>1){ e.preventDefault(); } },{passive:false});
 let DATA=null;
 let MODE='practice';
 let pool=[], poolIdx=0;
