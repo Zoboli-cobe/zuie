@@ -86,6 +86,12 @@ body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-ser
 .short-ans{white-space:pre-wrap;}
 .mt{margin-top:12px;}
 .empty{padding:40px;text-align:center;color:var(--muted);}
+/* 错题练习信息条 */
+.mistake-bar{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:12px;box-shadow:0 1px 2px rgba(0,0,0,.03);}
+.mistake-bar .mt-ico{flex:none;width:26px;height:26px;border-radius:8px;background:var(--badbg);color:var(--bad);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;}
+.mistake-bar .mt-txt{flex:1;font-size:13px;font-weight:600;color:var(--txt);}
+.mistake-bar .mt-clear{border:1px solid #fecaca;background:#fff;color:var(--bad);font-size:12px;font-weight:600;padding:7px 14px;border-radius:9px;cursor:pointer;}
+.mistake-bar .mt-clear:active{background:var(--badbg);transform:scale(.97);}
 /* 模拟考试 */
 .exam-info{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px;font-size:13px;color:var(--muted);line-height:1.7;}
 .exam-info b{color:var(--txt);}
@@ -274,30 +280,18 @@ function showTypes(){
 }
 
 function showMistakes(){
-  const c=document.getElementById('content');
-  document.getElementById('pager').style.display='none';
   const keys=Object.keys(mistakes);
-  let html=`<div class="backbar" onclick="showHome()"><span class="bk">‹</span>返回</div>`;
   if(!keys.length){
-    html+='<div class="empty">暂无错题，答题时答错的题会自动收录到这里 ✨</div>';
-    c.innerHTML=html; return;
+    const c=document.getElementById('content');
+    document.getElementById('pager').style.display='none';
+    c.innerHTML=`<div class="backbar" onclick="showHome()"><span class="bk">‹</span>返回</div><div style="padding:60px 20px;text-align:center;">
+      <div style="font-size:48px;margin-bottom:12px;">📝</div>
+      <div style="font-size:15px;font-weight:600;margin-bottom:6px;">暂无错题</div>
+      <div style="font-size:13px;color:var(--muted);">答题时答错的题会自动收录到这里</div>
+    </div>`;
+    return;
   }
-  // 按章节分组
-  const groups={};
-  keys.forEach(k=>{ const m=mistakes[k]; const g=m.chNum||'其他'; if(!groups[g]) groups[g]=[]; groups[g].push({k,m}); });
-  const sortedCh=Object.keys(groups).sort((a,b)=>(parseInt(a)||0)-(parseInt(b)||0));
-  html+=`<div style="margin-bottom:10px;font-size:13px;color:var(--muted);">共 ${keys.length} 道错题 · 按章节分类</div>`;
-  html+=`<button class="primary-btn" style="margin-bottom:14px;" onclick="startMistakePractice('')">🎯 练习全部错题</button>`;
-  sortedCh.forEach(ch=>{
-    const items=groups[ch];
-    html+=`<div style="margin:12px 0 6px;font-size:14px;font-weight:700;color:var(--pri);">第 ${ch} 讲（${items.length} 题）</div><div class="menu">`;
-    items.forEach(({k,m})=>{
-      html+=`<div class="menucard" onclick="startMistakePractice('${k}')"><div class="ico">✗</div><div><div class="ttl" style="font-size:14px;">${esc(m.text.slice(0,50))}${m.text.length>50?'…':''}</div><div class="sub">${typeName(m.type)} · 点击重做</div></div><div class="arrow">›</div></div>`;
-    });
-    html+='</div>';
-  });
-  html+=`<button class="primary-btn mt" onclick="clearMistakes()">清空错题本</button>`;
-  c.innerHTML=html;
+  startMistakePractice('');
 }
 function viewMistake(k){
   const m=mistakes[k];
@@ -339,7 +333,12 @@ function startMistakePractice(k){
     const src=allQuestions().find(qq=>qStateKey(qq)===key);
     if(src) qs.push(src);
   });
-  if(!qs.length){ showMistakes(); return; }
+  if(!qs.length){
+    // 错题数据异常（找不到原题）：清理并回首页
+    mistakes={}; saveMistakes();
+    showHome();
+    return;
+  }
   pool=qs;
   const idx=qs.findIndex(q=>qStateKey(q)===k);
   poolIdx=idx>=0?idx:0;
@@ -461,6 +460,13 @@ function renderQuestion(){
   card.innerHTML=`<div class="qmeta"><span>第 ${poolIdx+1} / ${pool.length} 题 · ${q.ch.num}讲</span><span class="badge${typeBadge(q.type)}">${badge}</span></div>
     <div class="qtext">${esc(q.text)}</div>`;
   c.innerHTML='';
+  if(curSession==='practice:mistakes'){
+    const bar=document.createElement('div');
+    bar.className='mistake-bar';
+    const left=Object.keys(mistakes).length;
+    bar.innerHTML=`<div class="mt-ico">✗</div><div class="mt-txt">${left>0?`错题练习 · 剩余 ${left} 题`:'🎉 全部完成，错题已清空'}</div><button class="mt-clear" onclick="clearMistakesBar()">🗑 清空</button>`;
+    c.appendChild(bar);
+  }
   c.appendChild(card);
   new QuestionWidget(card,q);
   pager.innerHTML=`<button onclick="step(-1)">‹ 上一题</button><span class="info">${poolIdx+1}/${pool.length}</span><button class="prim" onclick="step(1)">下一题 ›</button>`;
@@ -468,11 +474,17 @@ function renderQuestion(){
   const restart=document.createElement('div');
   restart.style.cssText='text-align:center;padding:8px 0 0;';
   if(curSession==='practice:mistakes'){
-    restart.innerHTML=`<a href="javascript:void(0)" style="color:#8a8f9c;font-size:12px;text-decoration:none;margin:0 8px;" onclick="doRestart()">↺ 重新练习</a><span style="color:#d0d4dc;">·</span><a href="javascript:void(0)" style="color:#3b82f6;font-size:12px;text-decoration:none;margin:0 8px;" onclick="showMistakes()">返回错题本</a>`;
+    restart.innerHTML=`<a href="javascript:void(0)" style="color:#8a8f9c;font-size:12px;text-decoration:none;margin:0 8px;" onclick="doRestart()">↺ 重新练习</a><span style="color:#d0d4dc;">·</span><a href="javascript:void(0)" style="color:#3b82f6;font-size:12px;text-decoration:none;margin:0 8px;" onclick="showHome()">返回首页</a>`;
   } else {
     restart.innerHTML=`<a href="javascript:void(0)" style="color:#8a8f9c;font-size:12px;text-decoration:none;margin:0 8px;" onclick="doRestart()">↺ 从第 1 题重新开始</a><span style="color:#d0d4dc;">·</span><a href="javascript:void(0)" style="color:#dc2626;font-size:12px;text-decoration:none;margin:0 8px;" onclick="resetCategory()">🗑 清空本项记忆</a>`;
   }
   c.appendChild(restart);
+}
+function clearMistakesBar(){
+  if(confirm('确定清空全部错题？')){
+    mistakes={}; saveMistakes();
+    showHome();
+  }
 }
 function doRestart(){
   if(!curSession) return;
@@ -994,7 +1006,14 @@ class QuestionWidget{
     this.state.answered=true; this.state.ok=ok; this.state.chosen=this.state.chosen.slice();
     sessionState[this.key]=this.state;
     if(!ok) addMistake(this.q, this.explainDisplay);
-    else if(curSession==='practice:mistakes'){ removeMistake(this.key); }
+    else if(curSession==='practice:mistakes'){
+      removeMistake(this.key);
+      const mt=document.querySelector('.mistake-bar .mt-txt');
+      if(mt){
+        const left=Object.keys(mistakes).length;
+        mt.textContent = left>0 ? `错题练习 · 剩余 ${left} 题` : '🎉 全部完成，错题已清空';
+      }
+    }
     Array.from(box.children).forEach((el,j)=>{
       const lbl=opts[j].label||String.fromCharCode(65+j);
       const isAns=correctLbls.has(lbl);
