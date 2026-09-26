@@ -14,18 +14,18 @@
 *{box-sizing:border-box}
 html,body{touch-action:pan-x pan-y;}
 body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--txt);-webkit-font-smoothing:antialiased;}
-.top{position:sticky;top:0;z-index:50;background:#fff;border-bottom:1px solid var(--line);padding:10px 14px 0;}
+.top{position:sticky;top:0;z-index:50;background:#fff;border-bottom:1px solid var(--line);padding:12px 14px 10px;}
 .brand{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
-.brand h1{margin:0;font-size:16px;font-weight:700;}
-.brand .count{font-size:12px;color:var(--muted);}
-.tabs{display:flex;gap:6px;}
-.tab{flex:1;text-align:center;padding:10px 0 8px;font-size:15px;font-weight:600;color:var(--muted);border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;}
-.tab.active{color:var(--pri);border-bottom-color:var(--pri);}
+.brand h1{margin:0;font-size:16px;font-weight:700;letter-spacing:.2px;}
+.brand .count{font-size:12px;color:var(--muted);background:var(--chip);padding:3px 10px;border-radius:999px;}
+.tabs{display:flex;gap:4px;background:#f0f2f6;border-radius:12px;padding:4px;}
+.tab{flex:1;text-align:center;padding:9px 0;font-size:14px;font-weight:600;color:var(--muted);border:none;background:none;cursor:pointer;border-radius:9px;transition:.15s;}
+.tab.active{color:var(--pri);background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.08);}
 .body{padding:14px;padding-bottom:60px;max-width:640px;margin:0 auto;}
 /* home / sub-menu cards */
 .menu{display:flex;flex-direction:column;gap:10px;}
-.menucard{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;cursor:pointer;transition:.12s;}
-.menucard:active{transform:scale(.98);}
+.menucard{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;cursor:pointer;transition:.12s;box-shadow:0 1px 2px rgba(0,0,0,.03);}
+.menucard:active{transform:scale(.98);background:#fafbfd;}
 .menucard .ico{flex:none;width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:20px;background:var(--pri-bg);}
 .menucard .ttl{font-size:15px;font-weight:600;}
 .menucard .sub{font-size:12px;color:var(--muted);margin-top:2px;}
@@ -86,12 +86,24 @@ body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-ser
 .short-ans{white-space:pre-wrap;}
 .mt{margin-top:12px;}
 .empty{padding:40px;text-align:center;color:var(--muted);}
+/* 答题对错计数条 */
+.stat-bar{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:9px 14px;margin-bottom:12px;font-size:13px;box-shadow:0 1px 2px rgba(0,0,0,.03);}
+.stat-bar .sb-ok{color:var(--ok);font-weight:700;flex:none;}
+.stat-bar .sb-bad{color:var(--bad);font-weight:700;flex:none;}
+.stat-bar .sb-total{color:var(--muted);flex:none;}
+.stat-bar .sb-track{flex:1;height:6px;border-radius:3px;background:#eef0f4;overflow:hidden;display:flex;}
+.stat-bar .sb-track .ok-fill{background:var(--ok);height:100%;transition:width .25s;}
+.stat-bar .sb-track .bad-fill{background:var(--bad);height:100%;transition:width .25s;}
 /* 错题练习信息条 */
 .mistake-bar{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:12px;box-shadow:0 1px 2px rgba(0,0,0,.03);}
 .mistake-bar .mt-ico{flex:none;width:26px;height:26px;border-radius:8px;background:var(--badbg);color:var(--bad);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;}
 .mistake-bar .mt-txt{flex:1;font-size:13px;font-weight:600;color:var(--txt);}
 .mistake-bar .mt-clear{border:1px solid #fecaca;background:#fff;color:var(--bad);font-size:12px;font-weight:600;padding:7px 14px;border-radius:9px;cursor:pointer;}
 .mistake-bar .mt-clear:active{background:var(--badbg);transform:scale(.97);}
+/* 小号对错计数（错题条内） */
+.sb-mini{font-size:12px;font-weight:700;flex:none;}
+.sb-mini.ok{color:var(--ok);}
+.sb-mini.bad{color:var(--bad);}
 /* 模拟考试 */
 .exam-info{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px;font-size:13px;color:var(--muted);line-height:1.7;}
 .exam-info b{color:var(--txt);}
@@ -460,11 +472,21 @@ function renderQuestion(){
   card.innerHTML=`<div class="qmeta"><span>第 ${poolIdx+1} / ${pool.length} 题 · ${q.ch.num}讲</span><span class="badge${typeBadge(q.type)}">${badge}</span></div>
     <div class="qtext">${esc(q.text)}</div>`;
   c.innerHTML='';
+  // 本会话对错统计
+  let okc=0, badc=0;
+  Object.values(sessionState).forEach(s=>{ if(s.answered){ if(s.ok===true) okc++; else if(s.ok===false) badc++; } });
   if(curSession==='practice:mistakes'){
     const bar=document.createElement('div');
     bar.className='mistake-bar';
     const left=Object.keys(mistakes).length;
-    bar.innerHTML=`<div class="mt-ico">✗</div><div class="mt-txt">${left>0?`错题练习 · 剩余 ${left} 题`:'🎉 全部完成，错题已清空'}</div><button class="mt-clear" onclick="clearMistakesBar()">🗑 清空</button>`;
+    bar.innerHTML=`<div class="mt-ico">✗</div><div class="mt-txt">${left>0?`错题练习 · 剩余 ${left} 题`:'🎉 全部完成，错题已清空'}</div><span class="sb-mini ok">✓${okc}</span><span class="sb-mini bad">✗${badc}</span><button class="mt-clear" onclick="clearMistakesBar()">🗑 清空</button>`;
+    c.appendChild(bar);
+  } else if(MODE==='practice'){
+    const bar=document.createElement('div');
+    bar.className='stat-bar';
+    const total=okc+badc;
+    const pct=total>0?Math.round(okc/total*100):0;
+    bar.innerHTML=`<span class="sb-ok">✓ 答对 ${okc}</span><span class="sb-bad">✗ 答错 ${badc}</span><span class="sb-total">已答 ${total}</span><div class="sb-track"><div class="ok-fill" style="width:${pct}%"></div><div class="bad-fill" style="width:${total>0?100-pct:0}%"></div></div>`;
     c.appendChild(bar);
   }
   c.appendChild(card);
@@ -485,6 +507,21 @@ function clearMistakesBar(){
     mistakes={}; saveMistakes();
     showHome();
   }
+}
+// 实时刷新对错计数条
+function updateStatBars(){
+  let okc=0, badc=0;
+  Object.values(sessionState).forEach(s=>{ if(s.answered){ if(s.ok===true) okc++; else if(s.ok===false) badc++; } });
+  const bar=document.querySelector('.stat-bar');
+  if(bar){
+    const total=okc+badc;
+    const pct=total>0?Math.round(okc/total*100):0;
+    bar.innerHTML=`<span class="sb-ok">✓ 答对 ${okc}</span><span class="sb-bad">✗ 答错 ${badc}</span><span class="sb-total">已答 ${total}</span><div class="sb-track"><div class="ok-fill" style="width:${pct}%"></div><div class="bad-fill" style="width:${total>0?100-pct:0}%"></div></div>`;
+  }
+  const okm=document.querySelector('.mistake-bar .sb-mini.ok');
+  const badm=document.querySelector('.mistake-bar .sb-mini.bad');
+  if(okm) okm.textContent='✓'+okc;
+  if(badm) badm.textContent='✗'+badc;
 }
 function doRestart(){
   if(!curSession) return;
@@ -676,7 +713,9 @@ function renderExamPaper(){
   // 实时对错计数
   let correctCnt=0, wrongCnt=0;
   exam.papers.forEach(pp=>{ const j=exam.judged[pp.id]; if(j===true) correctCnt++; else if(j===false) wrongCnt++; });
-  const scorebar=`<div class="exam-info" style="margin-bottom:12px;"><span style="color:var(--ok);font-weight:700;">✓ 答对 ${correctCnt}</span>　<span style="color:var(--bad);font-weight:700;">✗ 答错 ${wrongCnt}</span>　<span style="color:var(--muted);">共 ${exam.papers.length} 题</span></div>`;
+  const tj=correctCnt+wrongCnt;
+  const pctj=tj>0?Math.round(correctCnt/tj*100):0;
+  const scorebar=`<div class="stat-bar"><span class="sb-ok">✓ 答对 ${correctCnt}</span><span class="sb-bad">✗ 答错 ${wrongCnt}</span><span class="sb-total">共 ${exam.papers.length} 题</span><div class="sb-track"><div class="ok-fill" style="width:${pctj}%"></div><div class="bad-fill" style="width:${tj>0?100-pctj:0}%"></div></div></div>`;
   let interact='';
   let verdictHtml='';
   if(judged!==undefined){
@@ -873,6 +912,7 @@ class QuestionWidget{
           sessionState[this.key]=st;
           if(!ok) addMistake(this.q, this.q.explanation);
           this.showShortAns(d, st, true, ok);
+          updateStatBars();
           this.autoAdvance(ok);
         };
       }
@@ -1024,6 +1064,7 @@ class QuestionWidget{
     });
     this.appendAnswerBox(body, this.state);
     if(this.confirmBtn) this.confirmBtn.style.display='none';
+    updateStatBars();
     this.autoAdvance(this.state.ok);
   }
   autoAdvance(ok){
