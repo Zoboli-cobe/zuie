@@ -619,7 +619,7 @@ function makePaper(etype, srcQ, qid, score){
       base.stdAnswers=correctOpts;
     } else {
       base.isMulti=false;
-      base.stdAns=(correctOpts[0]||srcQ.answer).trim();
+      base.stdAns=(correctOpts[0]||'').trim();
     }
   } else if(etype==='judge'){
     const isTrue=Math.random()<0.5;
@@ -644,7 +644,7 @@ function fillStatement(text, fillText){
   return t+'：'+fillText;
 }
 function normalizeAns(s){
-  return (s||'').replace(/\s+/g,'').replace(/[～~]/g,'-').replace(/[％%]/g,'%').replace(/[。．.]/g,'.').replace(/[：:]/g,':');
+  return (s||'').replace(/\s+/g,'').replace(/[～~]/g,'-').replace(/[％%]/g,'%').replace(/[。．.]/g,'.').replace(/[：:]/g,':').replace(/[度]/g,'°').replace(/[（]/g,'(').replace(/[）]/g,')').replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)).replace(/[ａ-ｚＡ-Ｚ]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0));
 }
 // 简答题关键词提取 + 匹配（命中率≥80%判对）
 const STOP_WORDS=['进行','包括','其中','主要','例如','以及','以及','等等','所谓','属于','关于','由于','根据','按照','通过','对于','作为','具有','含有','是指','指的','一个','一种','就是','可以','需要','应当','应该','必须','如果','但是','因为','所以','因此','用户','我们','他们','这些','那些','什么','怎样','如何','是否','没有','不是','不可','可以','可','需','应','要','会','能','并','且','或','与','和','及','的','之','其','等','这','那','在','中','下','上','由','从','对','将','把','被','所','向','于','起','过' ];
