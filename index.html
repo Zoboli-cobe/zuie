@@ -87,13 +87,15 @@ body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-ser
 .mt{margin-top:12px;}
 .empty{padding:40px;text-align:center;color:var(--muted);}
 /* 答题对错计数条 */
-.stat-bar{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:9px 14px;margin-bottom:12px;font-size:13px;box-shadow:0 1px 2px rgba(0,0,0,.03);}
+.stat-bar{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px 14px;margin-bottom:12px;font-size:13px;box-shadow:0 1px 2px rgba(0,0,0,.03);}
 .stat-bar .sb-ok{color:var(--ok);font-weight:700;flex:none;}
 .stat-bar .sb-bad{color:var(--bad);font-weight:700;flex:none;}
 .stat-bar .sb-total{color:var(--muted);flex:none;}
 .stat-bar .sb-track{flex:1;height:6px;border-radius:3px;background:#eef0f4;overflow:hidden;display:flex;}
 .stat-bar .sb-track .ok-fill{background:var(--ok);height:100%;transition:width .25s;}
 .stat-bar .sb-track .bad-fill{background:var(--bad);height:100%;transition:width .25s;}
+.stat-bar .sb-clear{border:1px solid #fecaca;background:#fff;color:var(--bad);font-size:12px;font-weight:600;padding:6px 12px;border-radius:8px;cursor:pointer;flex:none;}
+.stat-bar .sb-clear:active{background:var(--badbg);transform:scale(.97);}
 /* 错题练习信息条 */
 .mistake-bar{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:12px;box-shadow:0 1px 2px rgba(0,0,0,.03);}
 .mistake-bar .mt-ico{flex:none;width:26px;height:26px;border-radius:8px;background:var(--badbg);color:var(--bad);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;}
@@ -486,19 +488,19 @@ function renderQuestion(){
     bar.className='stat-bar';
     const total=okc+badc;
     const pct=total>0?Math.round(okc/total*100):0;
-    bar.innerHTML=`<span class="sb-ok">✓ 答对 ${okc}</span><span class="sb-bad">✗ 答错 ${badc}</span><span class="sb-total">已答 ${total}</span><div class="sb-track"><div class="ok-fill" style="width:${pct}%"></div><div class="bad-fill" style="width:${total>0?100-pct:0}%"></div></div>`;
+    bar.innerHTML=`<span class="sb-ok">✓ ${okc}</span><span class="sb-bad">✗ ${badc}</span><div class="sb-track"><div class="ok-fill" style="width:${pct}%"></div><div class="bad-fill" style="width:${total>0?100-pct:0}%"></div></div><button class="sb-clear" onclick="resetCategory()">🗑 清空</button>`;
     c.appendChild(bar);
   }
   c.appendChild(card);
   new QuestionWidget(card,q);
   pager.innerHTML=`<button onclick="step(-1)">‹ 上一题</button><span class="info">${poolIdx+1}/${pool.length}</span><button class="prim" onclick="step(1)">下一题 ›</button>`;
-  // 顶部增加「从头开始 / 清空本项记忆」操作
+  // 底部「从头开始」小链接
   const restart=document.createElement('div');
   restart.style.cssText='text-align:center;padding:8px 0 0;';
   if(curSession==='practice:mistakes'){
     restart.innerHTML=`<a href="javascript:void(0)" style="color:#8a8f9c;font-size:12px;text-decoration:none;margin:0 8px;" onclick="doRestart()">↺ 重新练习</a><span style="color:#d0d4dc;">·</span><a href="javascript:void(0)" style="color:#3b82f6;font-size:12px;text-decoration:none;margin:0 8px;" onclick="showHome()">返回首页</a>`;
   } else {
-    restart.innerHTML=`<a href="javascript:void(0)" style="color:#8a8f9c;font-size:12px;text-decoration:none;margin:0 8px;" onclick="doRestart()">↺ 从第 1 题重新开始</a><span style="color:#d0d4dc;">·</span><a href="javascript:void(0)" style="color:#dc2626;font-size:12px;text-decoration:none;margin:0 8px;" onclick="resetCategory()">🗑 清空本项记忆</a>`;
+    restart.innerHTML=`<a href="javascript:void(0)" style="color:#8a8f9c;font-size:12px;text-decoration:none;margin:0 8px;" onclick="doRestart()">↺ 从第 1 题重新开始</a>`;
   }
   c.appendChild(restart);
 }
@@ -516,7 +518,7 @@ function updateStatBars(){
   if(bar){
     const total=okc+badc;
     const pct=total>0?Math.round(okc/total*100):0;
-    bar.innerHTML=`<span class="sb-ok">✓ 答对 ${okc}</span><span class="sb-bad">✗ 答错 ${badc}</span><span class="sb-total">已答 ${total}</span><div class="sb-track"><div class="ok-fill" style="width:${pct}%"></div><div class="bad-fill" style="width:${total>0?100-pct:0}%"></div></div>`;
+    bar.innerHTML=`<span class="sb-ok">✓ ${okc}</span><span class="sb-bad">✗ ${badc}</span><div class="sb-track"><div class="ok-fill" style="width:${pct}%"></div><div class="bad-fill" style="width:${total>0?100-pct:0}%"></div></div><button class="sb-clear" onclick="resetCategory()">🗑 清空</button>`;
   }
   const okm=document.querySelector('.mistake-bar .sb-mini.ok');
   const badm=document.querySelector('.mistake-bar .sb-mini.bad');
@@ -715,7 +717,7 @@ function renderExamPaper(){
   exam.papers.forEach(pp=>{ const j=exam.judged[pp.id]; if(j===true) correctCnt++; else if(j===false) wrongCnt++; });
   const tj=correctCnt+wrongCnt;
   const pctj=tj>0?Math.round(correctCnt/tj*100):0;
-  const scorebar=`<div class="stat-bar"><span class="sb-ok">✓ 答对 ${correctCnt}</span><span class="sb-bad">✗ 答错 ${wrongCnt}</span><span class="sb-total">共 ${exam.papers.length} 题</span><div class="sb-track"><div class="ok-fill" style="width:${pctj}%"></div><div class="bad-fill" style="width:${tj>0?100-pctj:0}%"></div></div></div>`;
+  const scorebar=`<div class="stat-bar"><span class="sb-ok">✓ ${correctCnt}</span><span class="sb-bad">✗ ${wrongCnt}</span><div class="sb-track"><div class="ok-fill" style="width:${pctj}%"></div><div class="bad-fill" style="width:${tj>0?100-pctj:0}%"></div></div></div>`;
   let interact='';
   let verdictHtml='';
   if(judged!==undefined){
